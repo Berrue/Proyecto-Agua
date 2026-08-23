@@ -12,6 +12,7 @@ extends CanvasLayer
 @export var boat_path: NodePath
 @export var director_path: NodePath
 @export var day_night_path: NodePath
+@export var rod_path: NodePath
 
 @export_group("Lanzador de tsunamis")
 ## Los tiers que apareceran como botones, en orden. Las teclas 1..N los lanzan.
@@ -33,6 +34,7 @@ var _parity_markers: Node3D
 var _boat: FloatingBody3D
 var _director: TsunamiDirector
 var _day_night: DayNightCycle
+var _rod: FishingRod
 var _slam_flash: float = 0.0
 var _peak_wave: float = 0.0
 
@@ -42,6 +44,7 @@ func _ready() -> void:
 	_boat = get_node_or_null(boat_path) as FloatingBody3D
 	_director = get_node_or_null(director_path) as TsunamiDirector
 	_day_night = get_node_or_null(day_night_path) as DayNightCycle
+	_rod = get_node_or_null(rod_path) as FishingRod
 
 	_slider.min_value = 0.0
 	_slider.max_value = 10.0
@@ -220,6 +223,10 @@ func _process(delta: float) -> void:
 		lines.append("hora             [b]%s[/b]  %s" % [
 			_day_night.clock_text(),
 			"[color=#9db4e8]NOCHE[/color]" if _day_night.is_night() else "[color=#e8d99d]DIA[/color]"])
+
+	if _rod != null:
+		lines.append("")
+		lines.append("[b]CAÑA[/b]  " + _rod.debug_line())
 
 	if _boat != null:
 		lines.append("")

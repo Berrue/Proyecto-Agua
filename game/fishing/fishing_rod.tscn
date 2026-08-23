@@ -1,0 +1,62 @@
+[gd_scene load_steps=8 format=3]
+
+[ext_resource type="Script" path="res://game/fishing/fishing_rod.gd" id="1_rod"]
+[ext_resource type="PackedScene" path="res://game/fishing/fish.tscn" id="2_fish"]
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_cane"]
+top_radius = 0.008
+bottom_radius = 0.022
+height = 1.5
+radial_segments = 6
+rings = 1
+
+[sub_resource type="StandardMaterial3D" id="Mat_cane"]
+albedo_color = Color(0.45, 0.32, 0.2, 1)
+roughness = 1.0
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_grip"]
+top_radius = 0.028
+bottom_radius = 0.028
+height = 0.3
+radial_segments = 6
+rings = 1
+
+[sub_resource type="StandardMaterial3D" id="Mat_grip"]
+albedo_color = Color(0.15, 0.13, 0.11, 1)
+roughness = 1.0
+
+[sub_resource type="SphereMesh" id="SphereMesh_bobber"]
+radius = 0.16
+height = 0.32
+radial_segments = 8
+rings = 4
+
+[sub_resource type="StandardMaterial3D" id="Mat_bobber"]
+albedo_color = Color(0.85, 0.25, 0.2, 1)
+roughness = 1.0
+
+[node name="FishingRod" type="Node3D"]
+script = ExtResource("1_rod")
+fish_scene = ExtResource("2_fish")
+
+[node name="RodPivot" type="Node3D" parent="."]
+
+[node name="Grip" type="MeshInstance3D" parent="RodPivot"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.1, 0)
+mesh = SubResource("CylinderMesh_grip")
+surface_material_override/0 = SubResource("Mat_grip")
+
+[node name="Cane" type="MeshInstance3D" parent="RodPivot"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.79, 0)
+mesh = SubResource("CylinderMesh_cane")
+surface_material_override/0 = SubResource("Mat_cane")
+
+[node name="Tip" type="Node3D" parent="RodPivot"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.54, 0)
+
+[node name="Bobber" type="MeshInstance3D" parent="."]
+visible = false
+mesh = SubResource("SphereMesh_bobber")
+surface_material_override/0 = SubResource("Mat_bobber")
+
+[node name="Line" type="MeshInstance3D" parent="."]

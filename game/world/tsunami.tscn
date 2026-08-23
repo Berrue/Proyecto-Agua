@@ -156,3 +156,4 @@ tsunami_tiers = [ExtResource("9_t1"), ExtResource("10_t2"), ExtResource("11_t3")
 default_lead_seconds = 40.0
 tsunami_from_direction_deg = 90.0
 day_night_path = NodePath("../DayNightCycle")
+rod_path = NodePath("../Player/Camera3D/FishingRod")

@@ -1,0 +1,44 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://game/fishing/fish.gd" id="1_fish"]
+[ext_resource type="Script" path="res://addons/ocean/physics/buoyancy_probe.gd" id="2_probe"]
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_fish"]
+radius = 0.09
+height = 0.44
+
+[sub_resource type="CapsuleMesh" id="CapsuleMesh_fish"]
+radius = 0.09
+height = 0.44
+radial_segments = 8
+rings = 3
+
+[sub_resource type="StandardMaterial3D" id="Mat_fish"]
+albedo_color = Color(0.65, 0.72, 0.78, 1)
+roughness = 1.0
+
+[node name="Fish" type="RigidBody3D"]
+collision_layer = 1
+collision_mask = 1
+mass = 2.0
+script = ExtResource("1_fish")
+drag_coefficient = 0.6
+angular_drag = 0.3
+max_submersion_depth = 0.8
+slam_threshold = 0.0
+tick_divisor = 2
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0, 0, 0)
+shape = SubResource("CapsuleShape3D_fish")
+
+[node name="Body" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0, 0, 0)
+mesh = SubResource("CapsuleMesh_fish")
+surface_material_override/0 = SubResource("Mat_fish")
+
+[node name="Probe" type="Marker3D" parent="."]
+script = ExtResource("2_probe")
+volume = 0.004
+height = 0.2
+drag_area = 0.05

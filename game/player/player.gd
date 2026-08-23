@@ -38,6 +38,11 @@ var state: State = State.DECK
 var submersion: float = 0.0
 var submerged_fraction: float = 0.0
 
+## Las dos manos estan ocupadas (luchando con un pez, bombeando...): A/D dejan
+## de mover al jugador — los consume la herramienta — y no se puede saltar.
+## Es LA apuesta fisica del diseño: pescar te quita el agarre.
+var hands_busy: bool = false
+
 @onready var _camera: Camera3D = $Camera3D
 
 var _pitch: float = 0.0
@@ -52,6 +57,21 @@ func _ready() -> void:
 	floor_snap_length = 0.5
 	floor_stop_on_slope = false
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	_setup_first_person_body()
+
+
+## En primera persona se oculta SOLO la cabeza (y el sombrero): al mirar abajo
+## ves tu chubasquero y tus botas — la encarnacion estilo PEAK — sin que el
+## craneo recorte la camara. El resto del cuerpo queda visible para sombras y,
+## en el futuro, para los demas jugadores.
+func _setup_first_person_body() -> void:
+	var model := get_node_or_null(^"Pescador")
+	if model == null:
+		return
+	for part_name in ["cabeza", "sombrero"]:
+		var part := model.find_child(part_name, true, false) as Node3D
+		if part != null:
+			part.visible = false
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -99,6 +119,8 @@ func _update_water_state() -> void:
 
 
 func _input_direction() -> Vector3:
+	if hands_busy:
+		return Vector3.ZERO # A/D son ahora la contra de la caña, no andar
 	var raw := Input.get_vector(&"move_left", &"move_right", &"move_forward", &"move_back")
 	return (transform.basis * Vector3(raw.x, 0.0, raw.y)).normalized()
 
@@ -114,7 +136,7 @@ func _process_deck(delta: float) -> void:
 	velocity.x = move_toward(velocity.x, target.x, accel * delta)
 	velocity.z = move_toward(velocity.z, target.z, accel * delta)
 
-	if Input.is_action_just_pressed(&"jump") and is_on_floor():
+	if Input.is_action_just_pressed(&"jump") and is_on_floor() and not hands_busy:
 		velocity.y = jump_velocity
 
 
