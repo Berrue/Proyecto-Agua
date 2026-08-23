@@ -28,6 +28,7 @@ enum Act {
 }
 
 signal act_changed(act: Act, seconds_to_impact: float)
+signal tier_launched(tier: TsunamiTier)
 
 const ACT_NAMES: Dictionary = {
 	Act.CALMA: "CALMA",
@@ -57,9 +58,13 @@ const ACT_NAMES: Dictionary = {
 @export var fury_impact: float = 9.0
 
 @export_group("El muro")
-@export var amplitude: float = 19.0
-@export var celerity: float = 45.0
-@export var width: float = 90.0
+## Los tres escalones, en orden. Se editan como recursos desde el editor.
+@export var tiers: Array[TsunamiTier] = []
+## Cual se lanza. Con `cycle_tiers` activo, es solo el punto de partida.
+@export var tier_index: int = 0
+## Al repetir, sube al siguiente tier. Es la mejor forma de SENTIR la escalada:
+## los tres seguidos en una sola sesion.
+@export var cycle_tiers: bool = true
 @export var from_direction_deg: float = 90.0
 
 @export_group("Control")
@@ -116,10 +121,28 @@ func _physics_process(delta: float) -> void:
 
 func _launch() -> void:
 	_launched = true
+	var tier := current_tier()
+	if tier == null:
+		push_warning("TsunamiDirector sin tiers asignados.")
+		return
 	var here := _reference.global_position if _reference != null else Vector3.ZERO
 	# Se pide POR TIEMPO DE LLEGADA, no por posicion de origen: lo que el
 	# diseñador quiere decidir es cuando llega el muro, no desde donde sale.
-	Ocean.spawn_tsunami(here, from_direction_deg, lead_seconds, amplitude, celerity, width)
+	#
+	# Un tier mas grande viaja mas rapido, asi que si el tiempo de aviso fuera
+	# fijo el LEVIATAN daria MENOS margen real que el MURO. Se alarga en
+	# proporcion para que la escalada sea de tamaño y no de injusticia.
+	var reach: float = lead_seconds * sqrt(tier.size_multiplier)
+	Ocean.spawn_tsunami_tier(here, from_direction_deg, reach, tier)
+	print("Tsunami lanzado: ", tier.summary())
+	tier_launched.emit(tier)
+
+
+## El tier que se va a lanzar (o se acaba de lanzar).
+func current_tier() -> TsunamiTier:
+	if tiers.is_empty():
+		return null
+	return tiers[clampi(tier_index, 0, tiers.size() - 1)]
 
 
 func _update_act() -> void:
@@ -131,10 +154,14 @@ func _update_act() -> void:
 	var here := _reference.global_position if _reference != null else Vector3.ZERO
 	seconds_to_impact = Ocean.time_until_tsunami(here)
 
-	# Los umbrales estan atados a la forma de la onda N: con lead=12, spread=9 y
-	# W/c = 2 s, la depresion empieza a notarse ~55 s antes de la cresta.
+	# El umbral de RETIRADA se DERIVA del tier, no se fija a mano: la retirada del
+	# LEVIATAN dura ~49 s y la del MURO ~36, asi que un numero fijo etiquetaria
+	# mal los actos justo en el tier mas espectacular.
+	var tier := current_tier()
+	var retreat_start: float = tier.retreat_seconds() * 1.5 if tier != null else 55.0
+
 	var next: Act
-	if seconds_to_impact > 55.0:
+	if seconds_to_impact > retreat_start:
 		next = Act.TORMENTA
 	elif seconds_to_impact > 8.0:
 		next = Act.RETIRADA
@@ -148,6 +175,8 @@ func _update_act() -> void:
 
 	if act == Act.RESACA and seconds_to_impact < -25.0:
 		if loop:
+			if cycle_tiers and not tiers.is_empty():
+				tier_index = (tier_index + 1) % tiers.size()
 			start()
 		else:
 			_running = false

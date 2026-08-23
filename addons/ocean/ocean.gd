@@ -44,6 +44,9 @@ var wind_direction_deg: float = 30.0
 var _proxy := OceanWaveProxy.new()
 var _events := OceanEvents.new()
 var _warned_tsunami: bool = false
+
+## Tier del tsunami en curso, para que el HUD y el audio sepan de que va.
+var current_tier: TsunamiTier = null
 var _fury: float = 3.0
 var _fury_target: float = 3.0
 var _paused: bool = false
@@ -193,7 +196,8 @@ func is_breaking(world_pos: Vector3) -> bool:
 ## quiere decidir es CUANDO llega, no desde donde sale. El origen se calcula
 ## hacia atras.
 func spawn_tsunami(target: Vector3, from_direction_deg: float, seconds: float,
-		amplitude: float = 18.0, celerity: float = 45.0, width: float = 90.0) -> int:
+		amplitude: float = 18.0, celerity: float = 45.0, width: float = 90.0,
+		lead: float = 12.0, spread: float = 9.0, depression: float = 0.55) -> int:
 	var ang := deg_to_rad(from_direction_deg)
 	# El tsunami avanza HACIA el objetivo desde la direccion indicada.
 	var dir := Vector2(-cos(ang), -sin(ang))
@@ -201,11 +205,25 @@ func spawn_tsunami(target: Vector3, from_direction_deg: float, seconds: float,
 	# Se le da margen de sobra por detras para que el perfil entero (incluida la
 	# depresion que va por delante) este ya formado al entrar en escena.
 	var origin := target_xz - dir * (celerity * seconds)
-	var idx := _events.spawn(origin, dir, amplitude, celerity, width, sim_time)
+	var idx := _events.spawn(origin, dir, amplitude, celerity, width, sim_time,
+		lead, spread, depression)
 	if idx >= 0:
 		_warned_tsunami = false
 		events_changed.emit()
 	return idx
+
+
+## Lanza un tsunami de un TIER concreto. Es la via normal: los numeros sueltos de
+## `spawn_tsunami()` quedan para debug y para los tests.
+func spawn_tsunami_tier(target: Vector3, from_direction_deg: float, seconds: float,
+		tier: TsunamiTier) -> int:
+	if tier == null:
+		push_warning("spawn_tsunami_tier() sin tier: no se lanza nada.")
+		return -1
+	current_tier = tier
+	return spawn_tsunami(target, from_direction_deg, seconds,
+		tier.amplitude(), tier.celerity(), tier.width(),
+		tier.lead, tier.spread, tier.depression)
 
 
 ## Segundos hasta que la cresta alcance este punto. INF si no hay tsunami.
@@ -220,6 +238,7 @@ func has_tsunami() -> bool:
 func clear_events() -> void:
 	_events.clear_all()
 	_warned_tsunami = false
+	current_tier = null
 	events_changed.emit()
 
 

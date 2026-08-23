@@ -58,6 +58,7 @@ uniform float foam_break_up : hint_range(0.0, 1.0) = 0.9;
 varying vec3 v_world;
 varying vec3 v_world_normal;
 varying float v_jacobian;
+varying float v_event_height;
 
 void vertex() {
 	// La malla del oceano solo se traslada, nunca rota ni escala (lo garantiza
@@ -67,7 +68,8 @@ void vertex() {
 	vec3 d = ocean_displacement(world_xz, ocean_time);
 	// La capa de eventos es puramente VERTICAL: no desplaza en horizontal, asi
 	// que se suma sin tocar la inversion de Gerstner.
-	d.y += ocean_event_height(world_xz, ocean_time);
+	v_event_height = ocean_event_height(world_xz, ocean_time);
+	d.y += v_event_height;
 	VERTEX += d;
 
 	// La transformada es solo traslacion, asi que una direccion en espacio de
@@ -138,7 +140,13 @@ void fragment() {
 	// --- Color ---------------------------------------------------------------
 	// Bandas planas, no gradiente: es la diferencia entre "tengo un shader toon"
 	// y "tengo direccion de arte".
-	float h = clamp(v_world.y * height_scale + 0.5, 0.0, 1.0);
+	//
+	// Se banda sobre el OLEAJE, restando la aportacion del tsunami. Si no, un
+	// muro de 28 m contra un Hs de 9 satura la escala y el mar entero se pinta
+	// del color de cresta: las bandas dejan de comunicar nada justo en el
+	// momento en que mas falta hace leer el agua. El volumen del muro lo
+	// comunican su silueta y su espuma, no el color.
+	float h = clamp((v_world.y - v_event_height) * height_scale + 0.5, 0.0, 1.0);
 	vec3 col = mix(deep_color, shallow_color, smoothstep(0.35, 0.55, h));
 	col = mix(col, crest_color, smoothstep(0.62, 0.78, h));
 	col = mix(col, foam_color, foam);

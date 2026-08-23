@@ -1,4 +1,4 @@
-[gd_scene load_steps=14 format=3]
+[gd_scene load_steps=17 format=3]
 
 [ext_resource type="Script" path="res://addons/ocean/ocean_surface.gd" id="1_surface"]
 [ext_resource type="Shader" path="res://addons/ocean/shaders/ocean_surface.gdshader" id="2_shader"]
@@ -8,6 +8,9 @@
 [ext_resource type="PackedScene" path="res://game/player/player.tscn" id="6_player"]
 [ext_resource type="PackedScene" path="res://addons/ocean/debug/ocean_debug_hud.tscn" id="7_hud"]
 [ext_resource type="Script" path="res://game/world/tsunami_director.gd" id="8_director"]
+[ext_resource type="Resource" path="res://resources/tsunami_tiers/tier_1_muro.tres" id="9_t1"]
+[ext_resource type="Resource" path="res://resources/tsunami_tiers/tier_2_coloso.tres" id="10_t2"]
+[ext_resource type="Resource" path="res://resources/tsunami_tiers/tier_3_leviatan.tres" id="11_t3"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_ocean"]
 render_priority = 0
@@ -120,9 +123,9 @@ lead_seconds = 95.0
 fury_calm = 2.5
 fury_storm = 7.5
 fury_impact = 9.0
-amplitude = 19.0
-celerity = 45.0
-width = 90.0
+tiers = [ExtResource("9_t1"), ExtResource("10_t2"), ExtResource("11_t3")]
+tier_index = 0
+cycle_tiers = true
 from_direction_deg = 90.0
 autostart = true
 loop = true

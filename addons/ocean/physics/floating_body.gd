@@ -189,10 +189,18 @@ func _compute_drag(probe: BuoyancyProbe3D, water_vel: Vector3, offset: Vector3, 
 	# Arrastre cuadratico: F = -0.5 * rho * Cd * A * |v| * v
 	var drag_mag: float = 0.5 * WATER_DENSITY * drag_coefficient * probe.drag_area * frac * speed * speed
 
-	# Tope de seguridad: el arrastre nunca puede invertir la velocidad en un
-	# solo tick. Sin esto, a 120 Hz y con velocidades altas el termino cuadratico
-	# sobrepasa y el cuerpo oscila cada vez mas fuerte hasta explotar.
-	var max_mag: float = speed * mass * float(Engine.physics_ticks_per_second) * 0.5
+	# TOPE DE ESTABILIDAD. El arrastre puede, como mucho, llevar el cuerpo a la
+	# velocidad del agua: nunca pasarse de largo. Si se pasa, al tick siguiente
+	# la velocidad relativa se ha invertido y es mayor, el termino cuadratico
+	# devuelve un golpe aun mas fuerte, y el cuerpo explota en unos pocos ticks.
+	#
+	# El reparto entre sondas es imprescindible: el tope acota la fuerza TOTAL
+	# sobre el cuerpo, asi que a cada sonda le toca su parte. Sin dividir entre
+	# `probes.size()`, un barco de 8 sondas recibe 8 veces el tope y explota
+	# igualmente. Se descubrio con el tsunami de tier 3, donde el agua viaja a
+	# ~31 m/s, pero habria pasado con cualquier corriente fuerte.
+	var dt: float = float(tick_divisor) / float(maxi(Engine.physics_ticks_per_second, 1))
+	var max_mag: float = 0.5 * speed * mass / maxf(dt * float(probes.size()), 1e-6)
 	drag_mag = minf(drag_mag, max_mag)
 
 	return -rel_vel.normalized() * drag_mag

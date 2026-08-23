@@ -32,7 +32,20 @@ const SLOPE_BREAK_SCALE := 8.0
 
 ## Profundidad efectiva para la velocidad de particula (u = c*eta/(h+eta)).
 ## No hay batimetria en mar abierto, asi que es un parametro de diseño honesto.
-const EFFECTIVE_DEPTH := 30.0
+## Tiene que quedar MUY por encima de la retirada mas profunda que pueda pedir un
+## tier: si eta se acerca a -h, la columna de agua se vacia, el denominador tiende
+## a cero y la velocidad se dispara.
+const EFFECTIVE_DEPTH := 45.0
+
+## Tope de la velocidad de particula, como fraccion de la celeridad.
+##
+## No es un numero arbitrario: en una onda solitaria, cuando la velocidad del
+## agua se acerca a la de la ola, la cresta adelanta a su propia base y la ola
+## ROMPE. Ese regimen ya lo modelamos aparte (el Jacobiano), asi que aqui se
+## acota y ya esta. Sin este tope, un tier grande produce corrientes de cientos
+## de m/s y los cuerpos las siguen fielmente hasta salir despedidos: el fallo
+## parece de la flotabilidad, pero es del agua.
+const MAX_PARTICLE_FRACTION := 0.6
 
 
 class Tsunami:
@@ -65,7 +78,8 @@ func _init() -> void:
 
 ## Lanza un tsunami. Devuelve el indice, o -1 si no hay hueco libre.
 func spawn(origin: Vector2, direction: Vector2, amplitude: float, celerity: float,
-		width: float, t0: float) -> int:
+		width: float, t0: float, lead: float = 12.0, spread: float = 9.0,
+		depression: float = 0.55) -> int:
 	for i in events.size():
 		if not events[i].active:
 			var e := events[i]
@@ -75,6 +89,9 @@ func spawn(origin: Vector2, direction: Vector2, amplitude: float, celerity: floa
 			e.celerity = maxf(celerity, 0.1)
 			e.width = maxf(width, 1.0)
 			e.t0 = t0
+			e.lead = lead
+			e.spread = spread
+			e.depression = clampf(depression, 0.0, 1.0)
 			e.active = true
 			return i
 	return -1
@@ -166,8 +183,11 @@ func velocity_at(p: Vector2, t: float) -> Vector3:
 
 		vel.y += -e.celerity * slope
 
-		var denom: float = maxf(EFFECTIVE_DEPTH + eta, 1.0)
-		var push: float = e.celerity * eta / denom
+		# Doble proteccion: el denominador nunca se acerca a cero, y ademas la
+		# velocidad resultante se acota a una fraccion de la celeridad.
+		var denom: float = maxf(EFFECTIVE_DEPTH + eta, EFFECTIVE_DEPTH * 0.35)
+		var limit: float = e.celerity * MAX_PARTICLE_FRACTION
+		var push: float = clampf(e.celerity * eta / denom, -limit, limit)
 		vel.x += e.direction.x * push
 		vel.z += e.direction.y * push
 	return vel

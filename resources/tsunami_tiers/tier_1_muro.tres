@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="TsunamiTier" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/ocean/tsunami_tier.gd" id="1_tier"]
+
+[resource]
+script = ExtResource("1_tier")
+tier_name = "MURO"
+size_multiplier = 1.0
+lead = 12.0
+spread = 9.0
+depression = 0.55

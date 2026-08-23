@@ -86,6 +86,8 @@ func _process(delta: float) -> void:
 	if Ocean.has_tsunami():
 		var eta := Ocean.time_until_tsunami(here)
 		var act_label := _director.act_name() if _director != null else "TSUNAMI"
+		if Ocean.current_tier != null:
+			act_label = "%s  ·  %s" % [Ocean.current_tier.tier_name, act_label]
 		# El color del contador es la telegrafia: pasa a rojo cuando ya no da
 		# tiempo a hacer nada.
 		var col := "#8fe388"

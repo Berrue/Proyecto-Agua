@@ -22,6 +22,8 @@ func _ready() -> void:
 	_test_determinism()
 	_test_water_pushes_then_pulls()
 	await _test_boat_survives_a_tsunami()
+	_test_tiers_escalate()
+	await _test_leviathan_does_not_explode()
 	_report()
 
 
@@ -181,6 +183,23 @@ func _test_water_pushes_then_pulls() -> void:
 	_check(push > 3.0, "la cresta empuja con fuerza", "empuje maximo %.2f m/s" % push)
 	_check(pull < -3.0, "la retirada arrastra mar adentro", "arrastre maximo %.2f m/s" % pull)
 
+	# INVARIANTE DURO, en TODOS los tiers: la corriente no puede acercarse a la
+	# celeridad de la ola. Si lo hace, no es que se rompa la fisica del barco: es
+	# que la del agua ya no tiene sentido, y los cuerpos la siguen fielmente
+	# hasta salir despedidos.
+	var worst_ratio: float = 0.0
+	for tier in _load_tiers():
+		var e2 := OceanEvents.new()
+		e2.spawn(Vector2(6000.0, 0.0), Vector2(-1.0, 0.0), tier.amplitude(),
+			tier.celerity(), tier.width(), 0.0, tier.lead, tier.spread, tier.depression)
+		var ct := e2.time_until_crest(Vector2.ZERO, 0.0)
+		var tt: float = ct - 150.0
+		while tt < ct + 30.0:
+			worst_ratio = maxf(worst_ratio, e2.velocity_at(Vector2.ZERO, tt).length() / tier.celerity())
+			tt += 0.05
+	_check(worst_ratio < 0.95, "la corriente nunca alcanza la velocidad de la ola",
+		"maximo %.2f x celeridad" % worst_ratio)
+
 
 ## Un tsunami completo con el barco y la carga encima: nada puede explotar, salir
 ## disparado ni producir NaN, y el barco tiene que SUBIR de verdad con el muro.
@@ -230,6 +249,152 @@ func _test_boat_survives_a_tsunami() -> void:
 	_check(min_y < -3.0, "el barco baja con la retirada", "minimo %.1f m" % min_y)
 	_check(worst_speed < 60.0, "nada sale disparado durante el tsunami",
 		"pico %.1f m/s" % worst_speed)
+
+	Ocean.clear_events()
+	boat.queue_free()
+	for b in barrels:
+		b.queue_free()
+
+
+# =============================================================================
+#  Tiers
+# =============================================================================
+
+const TIER_PATHS: Array[String] = [
+	"res://resources/tsunami_tiers/tier_1_muro.tres",
+	"res://resources/tsunami_tiers/tier_2_coloso.tres",
+	"res://resources/tsunami_tiers/tier_3_leviatan.tres",
+]
+
+
+func _load_tiers() -> Array[TsunamiTier]:
+	var out: Array[TsunamiTier] = []
+	for path in TIER_PATHS:
+		out.append(load(path) as TsunamiTier)
+	return out
+
+
+## Los tres tiers tienen que escalar en TODAS las dimensiones que el jugador
+## percibe, no solo en la altura: si solo creciera la amplitud, el tier 3 seria
+## un acantilado vertical en vez de un tsunami mas grande.
+func _test_tiers_escalate() -> void:
+	var tiers := _load_tiers()
+	_check(tiers.size() == 3 and not tiers.has(null), "los tres tiers cargan")
+	if tiers.has(null):
+		return
+
+	# La relacion que pidio el diseño: +50% y +120% sobre la base.
+	_check(is_equal_approx(tiers[0].size_multiplier, 1.0), "tier 1 es la base",
+		"x%.2f" % tiers[0].size_multiplier)
+	_check(absf(tiers[1].size_multiplier - 1.5) < 0.001, "tier 2 es un 50% mas grande",
+		"x%.2f" % tiers[1].size_multiplier)
+	_check(absf(tiers[2].size_multiplier - 2.2) < 0.001, "tier 3 es un 120% mas grande",
+		"x%.2f" % tiers[2].size_multiplier)
+
+	var ok_amp := true
+	var ok_width := true
+	var ok_cel := true
+	var ok_retreat := true
+	var ok_duration := true
+	for i in range(1, tiers.size()):
+		ok_amp = ok_amp and tiers[i].amplitude() > tiers[i - 1].amplitude()
+		ok_width = ok_width and tiers[i].width() > tiers[i - 1].width()
+		ok_cel = ok_cel and tiers[i].celerity() > tiers[i - 1].celerity()
+		ok_retreat = ok_retreat and tiers[i].retreat_depth() > tiers[i - 1].retreat_depth()
+		ok_duration = ok_duration and tiers[i].retreat_seconds() > tiers[i - 1].retreat_seconds()
+
+	_check(ok_amp, "cada tier es mas alto", "%.0f / %.0f / %.0f m" % [
+		tiers[0].amplitude(), tiers[1].amplitude(), tiers[2].amplitude()])
+	_check(ok_width, "cada tier es mas ancho", "%.0f / %.0f / %.0f m" % [
+		tiers[0].width(), tiers[1].width(), tiers[2].width()])
+	_check(ok_cel, "cada tier viaja mas rapido", "%.1f / %.1f / %.1f m/s" % [
+		tiers[0].celerity(), tiers[1].celerity(), tiers[2].celerity()])
+	_check(ok_retreat, "cada tier vacia mas el mar", "%.1f / %.1f / %.1f m" % [
+		tiers[0].retreat_depth(), tiers[1].retreat_depth(), tiers[2].retreat_depth()])
+	_check(ok_duration, "cada tier alarga la retirada", "%.0f / %.0f / %.0f s" % [
+		tiers[0].retreat_seconds(), tiers[1].retreat_seconds(), tiers[2].retreat_seconds()])
+
+	# Que se empine con el tamaño es deliberado (por eso la anchura crece con la
+	# raiz), pero no sin limite: una pared vertical deja de leerse como agua.
+	var steep_1: float = tiers[0].amplitude() / tiers[0].width()
+	var steep_3: float = tiers[2].amplitude() / tiers[2].width()
+	_check(steep_3 > steep_1, "el tier 3 es mas empinado que el 1",
+		"%.3f vs %.3f" % [steep_3, steep_1])
+	_check(steep_3 < steep_1 * 2.0, "pero no se convierte en un acantilado",
+		"%.3f vs limite %.3f" % [steep_3, steep_1 * 2.0])
+
+	# Y todos tienen que romper: un muro que no revuelca no sirve de nada.
+	for tier in tiers:
+		var ev := OceanEvents.new()
+		ev.spawn(Vector2(6000.0, 0.0), Vector2(-1.0, 0.0), tier.amplitude(),
+			tier.celerity(), tier.width(), 0.0, tier.lead, tier.spread, tier.depression)
+		var p := Vector2.ZERO
+		var crest_t := ev.time_until_crest(p, 0.0)
+		var worst: float = 0.0
+		var t: float = crest_t - 15.0
+		while t < crest_t + 15.0:
+			worst = maxf(worst, ev.break_penalty_at(p, t))
+			t += 0.05
+		_check(worst > 1.15, "el muro del tier %s rompe" % tier.tier_name,
+			"penalizacion %.2f" % worst)
+
+
+## El tier 3 es un muro de 42 m. Es donde la flotabilidad tiene mas papeletas de
+## explotar, asi que se prueba explicitamente con el barco y la carga encima.
+func _test_leviathan_does_not_explode() -> void:
+	var tier := load(TIER_PATHS[2]) as TsunamiTier
+	Ocean.clear_events()
+	Ocean.set_fury_immediate(7.0)
+
+	var boat: FloatingBody3D = load("res://game/boat/fishing_boat.tscn").instantiate()
+	add_child(boat)
+	boat.global_position = Vector3(0, 2, 0)
+
+	var barrels: Array[FloatingBody3D] = []
+	var barrel_scene := load("res://game/boat/barrel.tscn")
+	for i in 6:
+		var b: FloatingBody3D = barrel_scene.instantiate()
+		add_child(b)
+		b.global_position = Vector3(float(i) * 1.0 - 2.5, 3.0, 0.8)
+		barrels.append(b)
+
+	for _i in 180:
+		await get_tree().physics_frame
+
+	Ocean.spawn_tsunami_tier(boat.global_position, 90.0, 30.0, tier)
+
+	var min_y: float = INF
+	var max_y: float = -INF
+	var worst_speed: float = 0.0
+	var any_nan := false
+	var culprit := ""
+	var culprit_info := ""
+
+	for _i in 4200:
+		await get_tree().physics_frame
+		var y := boat.global_position.y
+		if not is_finite(y) or not is_finite(boat.linear_velocity.length()):
+			any_nan = true
+			break
+		min_y = minf(min_y, y)
+		max_y = maxf(max_y, y)
+		var all: Array[FloatingBody3D] = [boat]
+		all.append_array(barrels)
+		for b in all:
+			var sp := b.linear_velocity.length()
+			if sp > worst_speed:
+				worst_speed = sp
+				culprit = b.name
+				var eta := Ocean.time_until_tsunami(b.global_position)
+				culprit_info = "y=%.1f sumergido=%.0f%% agua_v=%.1f eta=%.1f" % [
+					b.global_position.y, b.submerged_fraction * 100.0,
+					Ocean.get_surface_velocity(b.global_position).length(), eta]
+
+	_check(not any_nan, "el LEVIATAN no produce NaN")
+	_check(max_y - min_y > 18.0, "el LEVIATAN mueve el barco mucho mas que el MURO",
+		"recorrido vertical %.1f m" % (max_y - min_y))
+	_check(worst_speed < 90.0, "ni con el LEVIATAN sale nada disparado",
+		"pico %.1f m/s en %s (%s)" % [worst_speed, culprit, culprit_info])
 
 	Ocean.clear_events()
 	boat.queue_free()
