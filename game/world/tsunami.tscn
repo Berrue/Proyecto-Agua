@@ -1,4 +1,4 @@
-[gd_scene load_steps=17 format=3]
+[gd_scene load_steps=19 format=3]
 
 [ext_resource type="Script" path="res://addons/ocean/ocean_surface.gd" id="1_surface"]
 [ext_resource type="Shader" path="res://addons/ocean/shaders/ocean_surface.gdshader" id="2_shader"]
@@ -11,6 +11,9 @@
 [ext_resource type="Resource" path="res://resources/tsunami_tiers/tier_1_muro.tres" id="9_t1"]
 [ext_resource type="Resource" path="res://resources/tsunami_tiers/tier_2_coloso.tres" id="10_t2"]
 [ext_resource type="Resource" path="res://resources/tsunami_tiers/tier_3_leviatan.tres" id="11_t3"]
+
+[ext_resource type="Script" path="res://game/world/day_night_cycle.gd" id="12_cycle"]
+[ext_resource type="Resource" path="res://resources/day_night/profile_default.tres" id="13_dnprofile"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_ocean"]
 render_priority = 0
@@ -130,6 +133,21 @@ from_direction_deg = 90.0
 autostart = true
 loop = true
 
+
+[node name="Moon" type="DirectionalLight3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 60, 0)
+light_color = Color(0.55, 0.65, 0.85, 1)
+light_energy = 0.0
+shadow_enabled = false
+
+[node name="DayNightCycle" type="Node" parent="."]
+script = ExtResource("12_cycle")
+profile = ExtResource("13_dnprofile")
+sun_path = NodePath("../Sun")
+moon_path = NodePath("../Moon")
+environment_path = NodePath("../WorldEnvironment")
+start_hour = 9.0
+
 [node name="OceanDebugHUD" parent="." instance=ExtResource("7_hud")]
 parity_markers_path = NodePath("../ParityMarkers")
 boat_path = NodePath("../FishingBoat")
@@ -137,3 +155,4 @@ director_path = NodePath("../TsunamiDirector")
 tsunami_tiers = [ExtResource("9_t1"), ExtResource("10_t2"), ExtResource("11_t3")]
 default_lead_seconds = 40.0
 tsunami_from_direction_deg = 90.0
+day_night_path = NodePath("../DayNightCycle")

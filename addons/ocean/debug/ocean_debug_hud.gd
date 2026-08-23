@@ -11,6 +11,7 @@ extends CanvasLayer
 @export var parity_markers_path: NodePath
 @export var boat_path: NodePath
 @export var director_path: NodePath
+@export var day_night_path: NodePath
 
 @export_group("Lanzador de tsunamis")
 ## Los tiers que apareceran como botones, en orden. Las teclas 1..N los lanzan.
@@ -31,6 +32,7 @@ extends CanvasLayer
 var _parity_markers: Node3D
 var _boat: FloatingBody3D
 var _director: TsunamiDirector
+var _day_night: DayNightCycle
 var _slam_flash: float = 0.0
 var _peak_wave: float = 0.0
 
@@ -39,6 +41,7 @@ func _ready() -> void:
 	_parity_markers = get_node_or_null(parity_markers_path) as Node3D
 	_boat = get_node_or_null(boat_path) as FloatingBody3D
 	_director = get_node_or_null(director_path) as TsunamiDirector
+	_day_night = get_node_or_null(day_night_path) as DayNightCycle
 
 	_slider.min_value = 0.0
 	_slider.max_value = 10.0
@@ -107,6 +110,10 @@ func _unhandled_input(event: InputEvent) -> void:
 	var key := (event as InputEventKey).keycode
 	if key == KEY_0:
 		_clear_tsunami()
+		get_viewport().set_input_as_handled()
+		return
+	if key == KEY_N and _day_night != null:
+		_day_night.advance_hours(3.0)
 		get_viewport().set_input_as_handled()
 		return
 	var index := key - KEY_1
@@ -209,6 +216,10 @@ func _process(delta: float) -> void:
 		"ROMPIENDO" if breaking < 0.0 else ""
 	])
 	lines.append("t simulacion     %.1f s" % Ocean.sim_time)
+	if _day_night != null:
+		lines.append("hora             [b]%s[/b]  %s" % [
+			_day_night.clock_text(),
+			"[color=#9db4e8]NOCHE[/color]" if _day_night.is_night() else "[color=#e8d99d]DIA[/color]"])
 
 	if _boat != null:
 		lines.append("")
