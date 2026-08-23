@@ -1,4 +1,4 @@
-[gd_scene load_steps=12 format=3]
+[gd_scene load_steps=15 format=3]
 
 [ext_resource type="Script" path="res://addons/ocean/ocean_surface.gd" id="1_surface"]
 [ext_resource type="Shader" path="res://addons/ocean/shaders/ocean_surface.gdshader" id="2_shader"]
@@ -7,6 +7,9 @@
 [ext_resource type="PackedScene" path="res://game/boat/barrel.tscn" id="5_barrel"]
 [ext_resource type="PackedScene" path="res://game/player/player.tscn" id="6_player"]
 [ext_resource type="PackedScene" path="res://addons/ocean/debug/ocean_debug_hud.tscn" id="7_hud"]
+[ext_resource type="Resource" path="res://resources/tsunami_tiers/tier_1_muro.tres" id="8_t1"]
+[ext_resource type="Resource" path="res://resources/tsunami_tiers/tier_2_coloso.tres" id="9_t2"]
+[ext_resource type="Resource" path="res://resources/tsunami_tiers/tier_3_leviatan.tres" id="10_t3"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_ocean"]
 render_priority = 0
@@ -112,3 +115,6 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.6, 1.5, 1.6)
 [node name="OceanDebugHUD" parent="." instance=ExtResource("7_hud")]
 parity_markers_path = NodePath("../ParityMarkers")
 boat_path = NodePath("../FishingBoat")
+tsunami_tiers = [ExtResource("8_t1"), ExtResource("9_t2"), ExtResource("10_t3")]
+default_lead_seconds = 40.0
+tsunami_from_direction_deg = 90.0

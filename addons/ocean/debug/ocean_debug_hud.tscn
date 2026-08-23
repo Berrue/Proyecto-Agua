@@ -16,7 +16,7 @@ script = ExtResource("1_hud")
 offset_left = 14.0
 offset_top = 14.0
 offset_right = 336.0
-offset_bottom = 470.0
+offset_bottom = 612.0
 theme_override_styles/panel = SubResource("StyleBoxFlat_panel")
 
 [node name="Margin" type="MarginContainer" parent="Panel"]
@@ -55,6 +55,33 @@ unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 6
 
+[node name="TsunamiSep" type="HSeparator" parent="Panel/Margin/VBox"]
+layout_mode = 2
+
+[node name="TsunamiLabel" type="Label" parent="Panel/Margin/VBox"]
+layout_mode = 2
+text = "LANZAR TSUNAMI"
+
+[node name="TsunamiButtons" type="HBoxContainer" parent="Panel/Margin/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="LeadLabel" type="Label" parent="Panel/Margin/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 12
+text = "AVISO: 40 s hasta el impacto"
+
+[node name="LeadSlider" type="HSlider" parent="Panel/Margin/VBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 22)
+layout_mode = 2
+min_value = 8.0
+max_value = 120.0
+step = 1.0
+value = 40.0
+
 [node name="ParityToggle" type="CheckButton" parent="Panel/Margin/VBox"]
 unique_name_in_owner = true
 layout_mode = 2
@@ -63,5 +90,6 @@ text = "Marcadores de paridad"
 [node name="Hint" type="Label" parent="Panel/Margin/VBox"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 11
-text = "WASD moverse · espacio saltar · ESC liberar raton"
+text = "WASD moverse · espacio saltar · ESC liberar raton
+1/2/3 lanzar tsunami · 0 cancelarlo"
 autowrap_mode = 2

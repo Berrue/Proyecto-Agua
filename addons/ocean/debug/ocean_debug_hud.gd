@@ -12,10 +12,21 @@ extends CanvasLayer
 @export var boat_path: NodePath
 @export var director_path: NodePath
 
+@export_group("Lanzador de tsunamis")
+## Los tiers que apareceran como botones, en orden. Las teclas 1..N los lanzan.
+@export var tsunami_tiers: Array[TsunamiTier] = []
+## Segundos hasta el impacto con los que se lanza. Ajustable con el deslizador.
+@export var default_lead_seconds: float = 40.0
+## De donde viene, en grados. 90 = desde +Z.
+@export var tsunami_from_direction_deg: float = 90.0
+
 @onready var _slider: HSlider = %FurySlider
 @onready var _readout: RichTextLabel = %Readout
 @onready var _presets: HBoxContainer = %Presets
 @onready var _parity_toggle: CheckButton = %ParityToggle
+@onready var _tsunami_buttons: HBoxContainer = %TsunamiButtons
+@onready var _lead_slider: HSlider = %LeadSlider
+@onready var _lead_label: Label = %LeadLabel
 
 var _parity_markers: Node3D
 var _boat: FloatingBody3D
@@ -48,6 +59,81 @@ func _ready() -> void:
 
 	if _boat != null:
 		_boat.slammed.connect(_on_slam)
+
+	_build_tsunami_launcher()
+
+
+# =============================================================================
+#  Lanzador de tsunamis
+# =============================================================================
+
+func _build_tsunami_launcher() -> void:
+	_lead_slider.min_value = 8.0
+	_lead_slider.max_value = 120.0
+	_lead_slider.step = 1.0
+	_lead_slider.value = default_lead_seconds
+	_lead_slider.value_changed.connect(func(_v: float) -> void: _update_lead_label())
+	_update_lead_label()
+
+	for i in tsunami_tiers.size():
+		var tier: TsunamiTier = tsunami_tiers[i]
+		if tier == null:
+			continue
+		var btn := Button.new()
+		btn.text = "%d · %s" % [i + 1, tier.tier_name]
+		btn.tooltip_text = tier.summary()
+		btn.pressed.connect(_launch_tier.bind(tier))
+		_tsunami_buttons.add_child(btn)
+
+	var clear_btn := Button.new()
+	clear_btn.text = "0 · limpiar"
+	clear_btn.tooltip_text = "Cancela el tsunami en curso."
+	clear_btn.pressed.connect(_clear_tsunami)
+	_tsunami_buttons.add_child(clear_btn)
+
+
+func _update_lead_label() -> void:
+	_lead_label.text = "AVISO: %.0f s hasta el impacto" % _lead_slider.value
+
+
+## Teclas 1..N para los tiers y 0 para limpiar.
+##
+## Los botones no bastan: durante el playtest el raton esta CAPTURADO porque
+## estas de pie en la cubierta, asi que no puedes hacer clic sin soltarlo antes
+## y perder justo el momento que querias provocar.
+func _unhandled_input(event: InputEvent) -> void:
+	if not (event is InputEventKey) or not event.is_pressed() or event.is_echo():
+		return
+	var key := (event as InputEventKey).keycode
+	if key == KEY_0:
+		_clear_tsunami()
+		get_viewport().set_input_as_handled()
+		return
+	var index := key - KEY_1
+	if index >= 0 and index < tsunami_tiers.size() and tsunami_tiers[index] != null:
+		_launch_tier(tsunami_tiers[index])
+		get_viewport().set_input_as_handled()
+
+
+func _launch_tier(tier: TsunamiTier) -> void:
+	# El director tiene su propio ciclo y volveria a llamar a `clear_events()`,
+	# asi que se detiene: a partir de aqui manda el lanzador.
+	if _director != null:
+		_director.stop()
+	Ocean.spawn_tsunami_tier(_target_position(), tsunami_from_direction_deg,
+		_lead_slider.value, tier)
+
+
+func _clear_tsunami() -> void:
+	Ocean.clear_events()
+
+
+## Hacia donde apunta el tsunami: el barco si lo hay, si no la camara.
+func _target_position() -> Vector3:
+	if _boat != null:
+		return _boat.global_position
+	var cam := get_viewport().get_camera_3d()
+	return cam.global_position if cam != null else Vector3.ZERO
 
 
 func _on_fury_changed(value: float) -> void:
@@ -88,6 +174,8 @@ func _process(delta: float) -> void:
 		var act_label := _director.act_name() if _director != null else "TSUNAMI"
 		if Ocean.current_tier != null:
 			act_label = "%s  ·  %s" % [Ocean.current_tier.tier_name, act_label]
+		if _director != null and not _director.is_running():
+			act_label += "  (manual)"
 		# El color del contador es la telegrafia: pasa a rojo cuando ya no da
 		# tiempo a hacer nada.
 		var col := "#8fe388"

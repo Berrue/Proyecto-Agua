@@ -226,5 +226,10 @@ func _update_atmosphere() -> void:
 	env.fog_density = move_toward(env.fog_density, target, _base_fog * 1.6 * get_physics_process_delta_time())
 
 
+## Si el director lleva la secuencia, o si la ha tomado el lanzador manual.
+func is_running() -> bool:
+	return _running
+
+
 func act_name() -> String:
 	return ACT_NAMES.get(act, "?")

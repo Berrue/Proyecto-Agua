@@ -134,3 +134,6 @@ loop = true
 parity_markers_path = NodePath("../ParityMarkers")
 boat_path = NodePath("../FishingBoat")
 director_path = NodePath("../TsunamiDirector")
+tsunami_tiers = [ExtResource("9_t1"), ExtResource("10_t2"), ExtResource("11_t3")]
+default_lead_seconds = 40.0
+tsunami_from_direction_deg = 90.0
