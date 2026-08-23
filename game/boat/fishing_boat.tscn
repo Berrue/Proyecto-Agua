@@ -1,0 +1,148 @@
+[gd_scene load_steps=12 format=3]
+
+[ext_resource type="Script" path="res://addons/ocean/physics/floating_body.gd" id="1_body"]
+[ext_resource type="Script" path="res://addons/ocean/physics/buoyancy_probe.gd" id="2_probe"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_hull"]
+size = Vector3(4.5, 1.6, 12)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_rail_side"]
+size = Vector3(0.24, 0.95, 12)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_rail_end"]
+size = Vector3(4.5, 0.95, 0.24)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_house"]
+size = Vector3(2.6, 2.0, 3.0)
+
+[sub_resource type="BoxMesh" id="BoxMesh_hull"]
+size = Vector3(4.5, 1.6, 12)
+
+[sub_resource type="BoxMesh" id="BoxMesh_rail_side"]
+size = Vector3(0.24, 0.95, 12)
+
+[sub_resource type="BoxMesh" id="BoxMesh_rail_end"]
+size = Vector3(4.5, 0.95, 0.24)
+
+[sub_resource type="BoxMesh" id="BoxMesh_house"]
+size = Vector3(2.6, 2.0, 3.0)
+
+[sub_resource type="StandardMaterial3D" id="Mat_hull"]
+albedo_color = Color(0.784, 0.286, 0.204, 1)
+roughness = 1.0
+
+[node name="FishingBoat" type="RigidBody3D"]
+collision_layer = 1
+collision_mask = 1
+mass = 4000.0
+center_of_mass_mode = 1
+center_of_mass = Vector3(0, -0.45, 0)
+continuous_cd = true
+script = ExtResource("1_body")
+drag_coefficient = 0.9
+angular_drag = 1.6
+max_submersion_depth = 2.5
+slam_threshold = 5.0
+
+[node name="HullShape" type="CollisionShape3D" parent="."]
+shape = SubResource("BoxShape3D_hull")
+
+[node name="RailPort" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.13, 1.275, 0)
+shape = SubResource("BoxShape3D_rail_side")
+
+[node name="RailStarboard" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.13, 1.275, 0)
+shape = SubResource("BoxShape3D_rail_side")
+
+[node name="RailBow" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.275, -5.88)
+shape = SubResource("BoxShape3D_rail_end")
+
+[node name="RailStern" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.275, 5.88)
+shape = SubResource("BoxShape3D_rail_end")
+
+[node name="HouseShape" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.8, 4)
+shape = SubResource("BoxShape3D_house")
+
+[node name="Hull" type="MeshInstance3D" parent="."]
+mesh = SubResource("BoxMesh_hull")
+surface_material_override/0 = SubResource("Mat_hull")
+
+[node name="RailPortMesh" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.13, 1.275, 0)
+mesh = SubResource("BoxMesh_rail_side")
+
+[node name="RailStarboardMesh" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.13, 1.275, 0)
+mesh = SubResource("BoxMesh_rail_side")
+
+[node name="RailBowMesh" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.275, -5.88)
+mesh = SubResource("BoxMesh_rail_end")
+
+[node name="RailSternMesh" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.275, 5.88)
+mesh = SubResource("BoxMesh_rail_end")
+
+[node name="HouseMesh" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.8, 4)
+mesh = SubResource("BoxMesh_house")
+
+[node name="ProbeBowPort" type="Marker3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.5, -0.7, -4.5)
+script = ExtResource("2_probe")
+volume = 1.5
+height = 1.4
+drag_area = 6.5
+
+[node name="ProbeBowStarboard" type="Marker3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.5, -0.7, -4.5)
+script = ExtResource("2_probe")
+volume = 1.5
+height = 1.4
+drag_area = 6.5
+
+[node name="ProbeMidBowPort" type="Marker3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.5, -0.7, -1.5)
+script = ExtResource("2_probe")
+volume = 1.5
+height = 1.4
+drag_area = 6.5
+
+[node name="ProbeMidBowStarboard" type="Marker3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.5, -0.7, -1.5)
+script = ExtResource("2_probe")
+volume = 1.5
+height = 1.4
+drag_area = 6.5
+
+[node name="ProbeMidSternPort" type="Marker3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.5, -0.7, 1.5)
+script = ExtResource("2_probe")
+volume = 1.5
+height = 1.4
+drag_area = 6.5
+
+[node name="ProbeMidSternStarboard" type="Marker3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.5, -0.7, 1.5)
+script = ExtResource("2_probe")
+volume = 1.5
+height = 1.4
+drag_area = 6.5
+
+[node name="ProbeSternPort" type="Marker3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.5, -0.7, 4.5)
+script = ExtResource("2_probe")
+volume = 1.5
+height = 1.4
+drag_area = 6.5
+
+[node name="ProbeSternStarboard" type="Marker3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.5, -0.7, 4.5)
+script = ExtResource("2_probe")
+volume = 1.5
+height = 1.4
+drag_area = 6.5
