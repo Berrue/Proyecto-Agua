@@ -21,6 +21,10 @@ func _ready() -> void:
 	_test_snap_on_sustained_greed()
 	_test_clean_fight_lands()
 	_test_species_bands()
+	_test_fish_takes_line()
+	_test_hold_click_is_not_a_strategy()
+	_test_slack_spits_with_warning()
+	_test_fish_tires()
 	await _test_fish_body()
 	await _test_wiring()
 	_test_sfx_library()
@@ -165,6 +169,78 @@ func _test_species_bands() -> void:
 		if String(s[&"name"]) == "Atun":
 			saw_tuna = true
 	_check(saw_tuna, "con furia 7.5 el atun existe")
+
+
+## EL PEZ SE LLEVA SEDAL: durante el tiron sin contra el progreso BAJA, y la
+## contra correcta lo frena a un cuarto. Sin esto no hay tira-y-afloja.
+func _test_fish_takes_line() -> void:
+	var free := FightModel.new()
+	free.start(_atun(), _rng(31))
+	var held := FightModel.new()
+	held.start(_atun(), _rng(31)) # misma semilla: mismas fases
+
+	var opposite: FightModel.Pull = FightModel.Pull.LEFT 		if free.pull_dir == FightModel.Pull.RIGHT else FightModel.Pull.RIGHT
+	free.progress = 0.5
+	held.progress = 0.5
+	# Un segundo de tiron: uno lo deja correr, el otro contra bien.
+	for _i in 60:
+		if not free.is_pulling():
+			break
+		free.step(1.0 / 60.0, false, FightModel.Pull.NONE, 0.0)
+		held.step(1.0 / 60.0, false, opposite, 0.0)
+	_check(free.progress < 0.5, "el pez sin contra se lleva sedal",
+		"progreso %.3f" % free.progress)
+	_check(held.progress > free.progress, "la contra frena la sangria",
+		"contra %.3f vs libre %.3f" % [held.progress, free.progress])
+
+
+## LA QUEJA DEL PLAYTEST, convertida en test: mantener el clic sin hacer nada
+## mas NO puede ganar rapido. Con un bacalao la tension de recoger contra el
+## tiron tiene que acercarse a la rotura incluso en calma.
+func _test_hold_click_is_not_a_strategy() -> void:
+	var m := FightModel.new()
+	m.start(FishSpecies.SPECIES[3], _rng(41)) # Bacalao, pull 0.55
+	var peak: float = 0.0
+	var t: float = 0.0
+	while not m.landed and not m.snapped and not m.escaped and t < 25.0:
+		m.step(1.0 / 60.0, true, FightModel.Pull.NONE, 0.0) # solo mantener clic
+		if m.is_pulling():
+			peak = maxf(peak, m.tension)
+		t += 1.0 / 60.0
+	_check(peak >= FightModel.SNAP_TENSION,
+		"recoger a lo bruto contra un bacalao roza la rotura incluso en calma",
+		"pico %.2f" % peak)
+	_check(m.snapped or t > 20.0, "y mantener clic no gana rapido",
+		"landed=%s en %.1f s" % [m.landed, t])
+
+
+## NO recoger tambien pierde: sedal flojo sostenido = el pez escupe, y el aviso
+## llega ANTES del fallo (la regla de justicia, ahora tambien por defecto).
+func _test_slack_spits_with_warning() -> void:
+	var m := FightModel.new()
+	m.start(_sardina(), _rng(51))
+	var warned_before_escape := false
+	var t: float = 0.0
+	while not m.escaped and t < 30.0:
+		if m.is_spit_warning() and not m.escaped:
+			warned_before_escape = true
+		m.step(1.0 / 60.0, false, FightModel.Pull.NONE, 0.0) # ignorar la caña
+		t += 1.0 / 60.0
+	_check(m.escaped, "ignorar la caña pierde el pez", "t=%.1f" % t)
+	_check(warned_before_escape, "y el aviso llego ANTES del fallo")
+	_check(not m.snapped, "escupir no es romper: fallo blando")
+
+
+## El pez se cansa TIRANDO: los tirones se debilitan y se ve ganar sin barras.
+func _test_fish_tires() -> void:
+	var m := FightModel.new()
+	m.start(_atun(), _rng(61))
+	for _i in 600: # 10 s de lucha activa
+		var counter: FightModel.Pull = FightModel.Pull.LEFT 			if m.pull_dir == FightModel.Pull.RIGHT else FightModel.Pull.RIGHT
+		m.step(1.0 / 60.0, not m.is_pulling(), counter, 0.0)
+		if m.landed or m.snapped or m.escaped:
+			break
+	_check(m.stamina < 0.9, "el pez se cansa peleando", "fuelle %.2f" % m.stamina)
 
 
 ## El pez fisico: masa real, escala por peso, y FLOTA si cae al agua.

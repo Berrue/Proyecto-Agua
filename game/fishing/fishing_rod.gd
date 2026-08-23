@@ -21,6 +21,7 @@ extends Node3D
 
 signal fish_landed(fish: Fish)
 signal line_snapped()
+signal fish_escaped()
 
 enum State { IDLE, CASTING, WAITING, NIBBLING, BITE, FIGHT }
 
@@ -395,10 +396,19 @@ func _step_fight(delta: float) -> void:
 
 	var cam := get_viewport().get_camera_3d()
 	var origin := Vector2(cam.global_position.x, cam.global_position.z)
-	_cast_point = origin + (_cast_point - origin) * (1.0 - fight.progress * 0.25 * delta * 10.0)
+	# La distancia de la boya ES el progreso: recoger la acerca, y el pez
+	# corriendo sin contra se la lleva — perder sedal se VE, no solo se oye.
+	var target_dist: float = lerpf(CAST_MAX_DIST, 2.5, fight.progress)
+	var dir_out := (_cast_point - origin).normalized()
+	if dir_out == Vector2.ZERO:
+		dir_out = Vector2.DOWN
+	_cast_point = origin + dir_out * lerpf((_cast_point - origin).length(), target_dist,
+		clampf(2.0 * delta, 0.0, 1.0))
 
 	if fight.snapped:
 		_on_snap()
+	elif fight.escaped:
+		_on_escape()
 	elif fight.landed:
 		_land()
 
@@ -494,6 +504,18 @@ func _on_snap() -> void:
 	_snap_flash = 1.0
 	line_snapped.emit()
 	_recall(true)
+
+
+## El pez escupe el anzuelo (sedal flojo sostenido). Fallo BLANDO: splash de
+## huida y el sedal vuelve muerto — sin latigazo, sin trauma: la culpa ya la
+## repartio el aviso de 1.2 s (comba exagerada + boya derivando).
+func _on_escape() -> void:
+	_world_p.global_position = _bobber.global_position
+	SfxLibrary.play_varied(_world_pb, SfxLibrary.splashes, "splash", -6.0, 1.1)
+	Input.start_joy_vibration(0, 0.3, 0.0, 0.12)
+	get_tree().create_timer(0.2).timeout.connect(_stop_rumble)
+	fish_escaped.emit()
+	_recall()
 
 
 func _land() -> void:
@@ -621,6 +643,10 @@ func _update_visuals(delta: float) -> void:
 					if fight.is_pulling():
 						var side := 1.0 if fight.pull_dir == FightModel.Pull.RIGHT else -1.0
 						pos.x += side * sin(Time.get_ticks_msec() * 0.008) * 0.6
+					elif fight.is_spit_warning():
+						# La boya deriva sin rumbo: el pez se esta soltando.
+						pos.x += sin(Time.get_ticks_msec() * 0.003) * 0.9
+						pos.z += cos(Time.get_ticks_msec() * 0.0025) * 0.9
 				State.WAITING, State.CASTING, State.IDLE:
 					pass
 			# La picada tira ACELERANDO (algo vivo), la espera flota suave.
@@ -656,6 +682,9 @@ func _draw_line() -> void:
 	var slack: float = 1.2
 	if state == State.FIGHT:
 		slack = lerpf(0.9, 0.05, clampf(fight.tension, 0.0, 1.0))
+		if fight.is_spit_warning():
+			# El anzuelo se afloja: la comba se exagera — el "recoge YA" visual.
+			slack += 0.8 + sin(Time.get_ticks_msec() * 0.01) * 0.2
 	var mid := (a + b) * 0.5 + Vector3.DOWN * slack
 	im.surface_begin(Mesh.PRIMITIVE_LINE_STRIP)
 	for i in 9:
