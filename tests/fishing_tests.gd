@@ -30,6 +30,7 @@ func _ready() -> void:
 	_test_sfx_library()
 	_test_nibble_plan()
 	await _test_camera_feedback()
+	await _test_fishing_hud()
 	_report()
 
 
@@ -262,9 +263,9 @@ func _test_fish_body() -> void:
 	fish.queue_free()
 
 
-## Cableado: el pescador esta montado, la cabeza oculta en primera persona, la
-## caña cuelga de la camara con su escena de pez asignada, y las manos ocupadas
-## bloquean el movimiento de verdad.
+## Cableado: el pescador esta montado, en primera persona solo se le ven las
+## manos (ni cuerpo ni cuello), la caña cuelga de la camara con su escena de pez
+## asignada, y las manos ocupadas bloquean el movimiento de verdad.
 func _test_wiring() -> void:
 	var scene: Node3D = load("res://game/world/toybox.tscn").instantiate()
 	add_child(scene)
@@ -275,12 +276,34 @@ func _test_wiring() -> void:
 	var model := player.get_node_or_null(^"Pescador")
 	_check(model != null, "el pescador esta montado en el jugador")
 	if model != null:
-		var head := model.find_child("cabeza", true, false) as Node3D
-		var hat := model.find_child("sombrero", true, false) as Node3D
-		_check(head != null and not head.visible, "la cabeza esta oculta en primera persona")
-		_check(hat != null and not hat.visible, "el sombrero tambien")
-		var torso := model.find_child("torso", true, false) as Node3D
-		_check(torso != null and torso.visible, "el cuerpo sigue visible (te ves al mirar abajo)")
+		var solo_sombra := GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
+		var drawn: Array[String] = []
+		for mesh: MeshInstance3D in model.find_children("*", "MeshInstance3D", true, false):
+			if mesh.visible and mesh.cast_shadow != solo_sombra:
+				drawn.append(mesh.name)
+		_check(drawn.is_empty(), "no se dibuja ni una pieza del cuerpo en primera persona",
+			"se dibujan: %s" % ", ".join(drawn))
+		var neck := model.find_child("cuello", true, false) as MeshInstance3D
+		_check(neck != null and neck.cast_shadow == solo_sombra,
+			"el cuello tampoco (era lo que mas cantaba al mirar abajo)")
+		var torso := model.find_child("chubasquero_cuerpo", true, false) as MeshInstance3D
+		_check(torso != null and torso.cast_shadow == solo_sombra,
+			"pero el cuerpo sigue proyectando sombra en cubierta")
+
+		_check(player.hands.size() == 2, "las dos manos existen como viewmodel",
+			"hay %d" % player.hands.size())
+		for hand: MeshInstance3D in player.hands:
+			_check(hand.visible and hand.is_inside_tree(), "la mano %s se dibuja" % hand.name)
+			_check(hand.get_parent() != null and hand.get_parent().name == "RodPivot",
+				"y cuelga del mango de la caña, no de la camara")
+
+		# El toggle de tercera persona (capturas y, manana, los demas jugadores).
+		player.set_body_visible(true)
+		var back: MeshInstance3D = model.find_child("chubasquero_cuerpo", true, false)
+		_check(back != null and back.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_ON,
+			"en tercera persona vuelve el cuerpo entero")
+		_check(not player.hands[0].visible, "y se apagan las manos del viewmodel")
+		player.set_body_visible(false)
 
 	var rod := player.get_node_or_null(^"Camera3D/FishingRod") as FishingRod
 	_check(rod != null, "la caña cuelga de la camara")
@@ -385,4 +408,55 @@ func _test_camera_feedback() -> void:
 	_check(cam.fov <= 83.1, "el tope duro de +-5 grados aguanta", "%.1f" % cam.fov)
 
 	cam.queue_free()
+	await get_tree().process_frame
+
+
+## La UI de pesca del playtest: "!" al picar, flecha con la tecla correcta en
+## la lucha, RECOGE en la pausa, y resultados con su color.
+func _test_fishing_hud() -> void:
+	var scene: Node3D = load("res://game/world/toybox.tscn").instantiate()
+	add_child(scene)
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+	var rod := scene.get_node(^"Player/Camera3D/FishingRod") as FishingRod
+	var hud: FishingHud = rod._hud
+	_check(hud != null, "la caña tiene HUD de pesca")
+	if hud == null:
+		scene.queue_free()
+		return
+
+	hud.show_bite()
+	_check(hud._bite_mark.visible, "al picar aparece el ! en pantalla")
+
+	hud.on_hooked()
+	_check(not hud._bite_mark.visible and hud._fight_box.visible,
+		"al clavar el ! se va y entra el panel de lucha")
+
+	# El pez tira a la IZQUIERDA -> la flecha pide D (->).
+	hud.update_fight(FightModel.Pull.LEFT, false, 0.4, 0.5, false, false)
+	_check(hud._arrow.visible and hud._arrow.text.contains("D"),
+		"pez tirando IZQ pide la tecla D", hud._arrow.text)
+	hud.update_fight(FightModel.Pull.RIGHT, false, 0.4, 0.5, false, false)
+	_check(hud._arrow.text.contains("A"), "pez tirando DER pide la tecla A")
+
+	# En la pausa: RECOGE; con el anzuelo soltandose: RECOGE YA.
+	hud.update_fight(FightModel.Pull.NONE, true, 0.1, 0.5, false, false)
+	_check(not hud._arrow.visible and hud._action.text.contains("RECOGE"),
+		"la pausa pide RECOGER")
+	hud.update_fight(FightModel.Pull.NONE, true, 0.1, 0.5, true, false)
+	_check(hud._action.text.contains("SE SUELTA"), "el aviso de escupida grita")
+
+	# Tension critica mientras recoges: SUELTA en rojo.
+	hud.update_fight(FightModel.Pull.LEFT, false, 0.9, 0.5, false, true)
+	_check(hud._action.text.contains("SUELTA"), "la tension critica pide SOLTAR")
+
+	# Resultado: aparece y se desvanece solo.
+	hud.show_result("¡Bacalao · 12 kg!", Color.GOLD)
+	_check(hud._result.visible and not hud._fight_box.visible,
+		"el resultado se planta y la lucha se esconde")
+	await get_tree().create_timer(2.3).timeout
+	_check(not hud._result.visible, "y se desvanece solo")
+
+	scene.queue_free()
 	await get_tree().process_frame

@@ -34,6 +34,13 @@ enum State { DECK, SWIMMING, UNDERWATER }
 
 @export var body_height: float = 1.8
 
+## Manos en primera persona: son los mitones del PROPIO modelo, clonados y
+## colgados del mango de la caña. `hand_grip_*` es la altura de cada mano sobre
+## el mango en metros. Numeros de playtest, por eso viven como exports.
+@export var hand_scale: float = 0.6
+@export var hand_grip_top: float = 0.0
+@export var hand_grip_bottom: float = -0.14
+
 var state: State = State.DECK
 var submersion: float = 0.0
 var submerged_fraction: float = 0.0
@@ -42,6 +49,10 @@ var submerged_fraction: float = 0.0
 ## de mover al jugador — los consume la herramienta — y no se puede saltar.
 ## Es LA apuesta fisica del diseño: pescar te quita el agarre.
 var hands_busy: bool = false
+
+## Los dos mitones del viewmodel. Publicos porque las capturas de tercera
+## persona (y manana la vista de los demas jugadores) tienen que apagarlos.
+var hands: Array[MeshInstance3D] = []
 
 @onready var _camera: Camera3D = $Camera3D
 
@@ -60,18 +71,68 @@ func _ready() -> void:
 	_setup_first_person_body()
 
 
-## En primera persona se oculta SOLO la cabeza (y el sombrero): al mirar abajo
-## ves tu chubasquero y tus botas — la encarnacion estilo PEAK — sin que el
-## craneo recorte la camara. El resto del cuerpo queda visible para sombras y,
-## en el futuro, para los demas jugadores.
+## En primera persona solo se ven las MANOS: ni cuerpo, ni cuello, ni botas.
+## El pescador entero pasa a "solo sombra" — se sigue proyectando en cubierta,
+## que es informacion util (te dice donde estas parado y hacia donde miras),
+## pero deja de recortar la camara y de taparte la caña con el chubasquero.
 func _setup_first_person_body() -> void:
-	var model := get_node_or_null(^"Pescador")
+	var model := get_node_or_null(^"Pescador") as Node3D
 	if model == null:
 		return
-	for part_name in ["cabeza", "sombrero"]:
-		var part := model.find_child(part_name, true, false) as Node3D
-		if part != null:
-			part.visible = false
+	for mesh: MeshInstance3D in _body_meshes(model):
+		mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_add_hand(model, &"palma_R", hand_grip_top)
+	_add_hand(model, &"palma_L", hand_grip_bottom)
+
+
+## Clona un miton del modelo y lo cuelga del pivote de la caña, a `grip` metros
+## sobre el mango. Colgarlo del PIVOTE y no de la camara es lo que hace que la
+## mano siga el doblado y el latigazo de la caña sin animar una sola linea.
+func _add_hand(model: Node3D, part_name: StringName, grip: float) -> void:
+	var src := model.find_child(String(part_name), true, false) as MeshInstance3D
+	if src == null:
+		return
+	var mount := get_node_or_null(^"Camera3D/FishingRod/RodPivot") as Node3D
+	if mount == null:
+		mount = _camera
+	var hand := src.duplicate() as MeshInstance3D
+	hand.name = "Mano_%s" % part_name
+	# El miton esta modelado centrado en su propio origen: conservamos su escala
+	# (es un elipsoide, no una esfera) y tiramos su sitio en el cuerpo, que aqui
+	# ya no significa nada.
+	hand.transform = Transform3D(
+		src.transform.basis.scaled(Vector3.ONE * hand_scale),
+		Vector3(0.0, grip, 0.0))
+	# Una mano flotando delante de la camara no proyecta sombra: la sombra buena,
+	# la del cuerpo entero, ya la esta tirando el modelo.
+	hand.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mount.add_child(hand)
+	hands.append(hand)
+
+
+## Todas las piezas dibujables del pescador (el modelo son ~37 mallas sueltas).
+func _body_meshes(model: Node3D) -> Array[MeshInstance3D]:
+	var out: Array[MeshInstance3D] = []
+	for node: Node in model.find_children("*", "MeshInstance3D", true, false):
+		out.append(node as MeshInstance3D)
+	return out
+
+
+## Enciende o apaga el cuerpo entero. En partida SIEMPRE esta apagado; lo usan
+## las capturas de tercera persona y, cuando entre la red, la copia de este
+## jugador que veran los demas.
+func set_body_visible(body_visible: bool) -> void:
+	var model := get_node_or_null(^"Pescador") as Node3D
+	if model == null:
+		return
+	var mode: int = (
+		GeometryInstance3D.SHADOW_CASTING_SETTING_ON if body_visible
+		else GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
+	)
+	for mesh: MeshInstance3D in _body_meshes(model):
+		mesh.cast_shadow = mode
+	for hand: MeshInstance3D in hands:
+		hand.visible = not body_visible
 
 
 func _unhandled_input(event: InputEvent) -> void:

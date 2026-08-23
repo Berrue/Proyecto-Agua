@@ -26,11 +26,9 @@ func _ready() -> void:
 	for _i in 150:
 		await get_tree().process_frame
 
-	# --- 1. Tercera persona: el pescador entero (cabeza visible para la foto) --
-	for part_name in ["cabeza", "sombrero"]:
-		var part := player.get_node(^"Pescador").find_child(part_name, true, false) as Node3D
-		if part != null:
-			part.visible = true
+	# --- 1. Tercera persona: el pescador entero (en partida solo se ven las
+	# manos, asi que hay que encender el cuerpo a proposito para la foto) -------
+	player.set_body_visible(true)
 	var ext_cam := Camera3D.new()
 	ext_cam.fov = 55.0
 	add_child(ext_cam)
@@ -43,10 +41,7 @@ func _ready() -> void:
 	for _i in 30:
 		await get_tree().process_frame
 	await _shoot("0_pescador_tercera")
-	for part_name in ["cabeza", "sombrero"]:
-		var part := player.get_node(^"Pescador").find_child(part_name, true, false) as Node3D
-		if part != null:
-			part.visible = false
+	player.set_body_visible(false)
 	player_cam.current = true
 
 	# --- 2. POV: caña lista ----------------------------------------------------

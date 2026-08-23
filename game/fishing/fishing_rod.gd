@@ -88,6 +88,7 @@ var _world_pb: AudioStreamPlaybackPolyphonic
 var _ui_p: AudioStreamPlayer
 var _ui_pb: AudioStreamPlaybackPolyphonic
 var _mark: Label3D
+var _hud: FishingHud
 
 @onready var _tip: Node3D = $RodPivot/Tip
 @onready var _rod_pivot: Node3D = $RodPivot
@@ -119,6 +120,8 @@ func _ready() -> void:
 	_line.material_override = _line_mat
 	_setup_audio()
 	_setup_mark()
+	_hud = FishingHud.new()
+	add_child(_hud)
 
 
 func _setup_audio() -> void:
@@ -251,7 +254,7 @@ func _cast() -> void:
 	get_tree().create_timer(0.45).timeout.connect(func() -> void:
 		if state == State.WAITING and _silence_left <= 0.0:
 			_world_p.global_position = _bobber_rest_pos()
-			SfxLibrary.play_one(_world_pb, SfxLibrary.plip, -2.0, 0.6))
+			SfxLibrary.play_varied(_world_pb, SfxLibrary.splashes, "splash", -14.0, 1.35))
 
 
 func _bobber_rest_pos() -> Vector3:
@@ -304,12 +307,11 @@ func _step_nibbling(delta: float) -> void:
 			_start_bite() # tras el ultimo falso, el mordisco es GARANTIZADO
 
 
-## Un toque falso: plip agudo, boya hundida solo 15-25%, micro-cabeceo, rumble
-## debil. Todo lo CONTRARIO del mordisco, en todos los canales.
+## Un toque falso: SILENCIOSO (feedback del playtest: el plip sonaba a premio y
+## confundia — la señal sonora queda reservada al mordisco real). El toque se
+## lee en la boya que se hunde un 20% y el micro-cabeceo de la caña.
 func _do_nibble() -> void:
 	_nibble_dip = 1.0
-	_world_p.global_position = _bobber.global_position
-	SfxLibrary.play_one(_world_pb, SfxLibrary.plip, -4.0)
 	_bend_vel += 2.5
 	Input.start_joy_vibration(0, 0.25, 0.0, 0.1)
 
@@ -346,6 +348,7 @@ func _start_bite() -> void:
 	tw.tween_property(_mark, "scale", Vector3.ONE, 0.1)
 	if _camfx != null:
 		_camfx.kick_fov(-3.0, 0.08, BITE_WINDOW, 0.3)
+	_hud.show_bite()
 
 
 func _hook() -> void:
@@ -354,6 +357,8 @@ func _hook() -> void:
 	_reel_rearm = true # recoger exige un clic NUEVO: clavar no es recoger
 	_prev_pull = fight.pull_dir
 	_mark.visible = false
+	_hud.on_hooked()
+	_hud.punch_arrow()
 	_set_player_lock(true)
 
 
@@ -388,7 +393,11 @@ func _step_fight(delta: float) -> void:
 			_world_p.global_position = _bobber.global_position
 			SfxLibrary.play_varied(_world_pb, SfxLibrary.splashes, "splash",
 				-8.0 + float(hooked_species[&"pull"]) * 6.0, 1.15)
+		_hud.punch_arrow() # el ojo va solo a la nueva instruccion
 		_prev_pull = fight.pull_dir
+
+	_hud.update_fight(fight.pull_dir, not fight.is_pulling(), norm,
+		fight.progress, fight.is_spit_warning(), reeling)
 
 	_click_train(delta, norm)
 	_creak(delta, norm, counter)
@@ -502,6 +511,7 @@ func _on_snap() -> void:
 	_remnant_left = 6.0
 	_adrift_left = 8.0
 	_snap_flash = 1.0
+	_hud.show_result("¡SEDAL ROTO!", Color(1.0, 0.3, 0.25))
 	line_snapped.emit()
 	_recall(true)
 
@@ -514,6 +524,7 @@ func _on_escape() -> void:
 	SfxLibrary.play_varied(_world_pb, SfxLibrary.splashes, "splash", -6.0, 1.1)
 	Input.start_joy_vibration(0, 0.3, 0.0, 0.12)
 	get_tree().create_timer(0.2).timeout.connect(_stop_rumble)
+	_hud.show_result("Se escapó...", Color(0.65, 0.7, 0.75))
 	fish_escaped.emit()
 	_recall()
 
@@ -544,6 +555,8 @@ func _land() -> void:
 		Input.start_joy_vibration(0, 0.4, 0.0, 0.1))
 	if _camfx != null:
 		_camfx.add_trauma(0.35)
+	_hud.show_result("¡%s  ·  %.0f kg!" % [fish.species_name, fish.weight_kg],
+		Color(1.0, 0.85, 0.35))
 
 	fish_landed.emit(fish)
 	_recall()
@@ -556,6 +569,7 @@ func _recall(keep_adrift: bool = false) -> void:
 		_bobber.visible = false
 	(_line.mesh as ImmediateMesh).clear_surfaces()
 	_mark.visible = false
+	_hud.hide_all()
 	_nibble_dip = 0.0
 	_stop_rumble()
 	_buzz_p.stop()
