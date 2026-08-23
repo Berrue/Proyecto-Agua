@@ -19,6 +19,7 @@ config/icon="res://icon.svg"
 [autoload]
 
 Ocean="*res://addons/ocean/ocean.gd"
+SfxLibrary="*res://game/audio/sfx_library.gd"
 
 [debug]
 

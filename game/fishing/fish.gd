@@ -9,6 +9,32 @@ var species_name: String = "Sardina"
 var weight_kg: float = 2.0
 var value: int = 6
 
+var _thuds_left: int = 3
+var _sfx: AudioStreamPlayer3D
+var _sfx_pb: AudioStreamPlaybackPolyphonic
+
+
+func _ready() -> void:
+	super()
+	body_entered.connect(_on_body_entered)
+	_sfx = AudioStreamPlayer3D.new()
+	_sfx.bus = &"SFX"
+	_sfx.stream = AudioStreamPolyphonic.new()
+	add_child(_sfx)
+	_sfx.play()
+	_sfx_pb = _sfx.get_stream_playback() as AudioStreamPlaybackPolyphonic
+
+
+## El thud contra la cubierta: pez gordo = golpe mas grave. Los dos primeros
+## rebotes suenan cada vez mas flojos — y luego silencio, que el aleteo del
+## rigidbody ya cuenta la historia solo.
+func _on_body_entered(_body: Node) -> void:
+	if _thuds_left <= 0 or linear_velocity.length() < 1.5:
+		return
+	_thuds_left -= 1
+	var pitch: float = clampf(1.4 - weight_kg * 0.012, 0.5, 1.4)
+	SfxLibrary.play_one(_sfx_pb, SfxLibrary.thud, -4.0 - float(2 - _thuds_left) * 5.0, pitch)
+
 
 func setup(species: Dictionary) -> void:
 	species_name = String(species[&"name"])

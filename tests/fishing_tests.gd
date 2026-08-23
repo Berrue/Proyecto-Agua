@@ -23,6 +23,9 @@ func _ready() -> void:
 	_test_species_bands()
 	await _test_fish_body()
 	await _test_wiring()
+	_test_sfx_library()
+	_test_nibble_plan()
+	await _test_camera_feedback()
 	_report()
 
 
@@ -218,4 +221,92 @@ func _test_wiring() -> void:
 	_check(hud.get_node_or_null(hud.rod_path) != null, "el HUD encuentra la caña")
 
 	scene.queue_free()
+	await get_tree().process_frame
+
+
+# =============================================================================
+#  Game feel
+# =============================================================================
+
+## La fabrica de sonidos: todo generado, formato correcto, y el loop de buzz
+## con su bucle cerrado (es el sustituto del scheduler a alta tasa).
+func _test_sfx_library() -> void:
+	_check(SfxLibrary.reel_clicks.size() >= 4, "hay variantes de click de carrete",
+		"%d" % SfxLibrary.reel_clicks.size())
+	var all_ok := true
+	var pools: Array = [SfxLibrary.reel_clicks, SfxLibrary.creak_pulses,
+		SfxLibrary.splashes, SfxLibrary.jingles,
+		[SfxLibrary.plip, SfxLibrary.chomp, SfxLibrary.snap, SfxLibrary.thud,
+		SfxLibrary.lap, SfxLibrary.reel_buzz]]
+	for pool in pools:
+		for wav in pool:
+			var w := wav as AudioStreamWAV
+			if w == null or w.data.is_empty() or w.mix_rate != SfxLibrary.RATE 					or w.format != AudioStreamWAV.FORMAT_16_BITS:
+				all_ok = false
+	_check(all_ok, "todos los sonidos generados en 16 bits a 22050 Hz")
+	_check(SfxLibrary.reel_buzz.loop_mode == AudioStreamWAV.LOOP_FORWARD
+		and SfxLibrary.reel_buzz.loop_end > 0, "el buzz es un loop cerrado")
+	_check(SfxLibrary.jingles.size() == 3
+		and SfxLibrary.jingles[2].data.size() > SfxLibrary.jingles[0].data.size(),
+		"3 jingles y el epico dura mas que el comun")
+
+	# La curva del click train: silencio = vas bien; el maximo ronda 22 Hz.
+	_check(SfxLibrary.click_rate_for(0.2) == 0.0, "bajo 30% de tension, silencio")
+	_check(SfxLibrary.click_rate_for(0.5) > 3.0, "a media tension, clicks")
+	var top := SfxLibrary.click_rate_for(1.0)
+	_check(absf(top - 22.0) < 0.5, "a tension maxima ~22 Hz", "%.1f" % top)
+
+	_check(AudioServer.get_bus_index("Reel") != -1 and AudioServer.get_bus_index("SFX") != -1,
+		"los buses Reel y SFX existen")
+
+
+## El plan de nibbles: 1-4 toques falsos, separados 0.5-1.5 s. Tras el ultimo,
+## el mordisco esta garantizado (eso lo hace la maquina de estados).
+func _test_nibble_plan() -> void:
+	var rng := _rng(77)
+	var ok := true
+	for _i in 200:
+		var plan := FishingRod.plan_nibbles(rng)
+		if plan.size() < 1 or plan.size() > 4:
+			ok = false
+		for d in plan:
+			if d < 0.5 or d > 1.5:
+				ok = false
+	_check(ok, "el plan de nibbles respeta 1-4 toques de 0.5-1.5 s")
+
+
+## La camara: el trauma decae solo, el FOV vuelve a su base, y nada rota jamas.
+func _test_camera_feedback() -> void:
+	var cam := CameraFeedback.new()
+	cam.fov = 78.0
+	add_child(cam)
+	await get_tree().process_frame
+
+	var base_rot := cam.rotation
+	cam.add_trauma(0.6)
+	var moved := false
+	for _i in 20:
+		await get_tree().process_frame
+		if cam.position.length() > 0.001:
+			moved = true
+	_check(moved, "el trauma mueve la camara (traslacion)")
+	_check(cam.rotation == base_rot, "y JAMAS la rota (regla anti-mareo)")
+
+	for _i in 60:
+		await get_tree().process_frame
+	_check(cam.position.length() < 0.002, "el trauma decae solo",
+		"offset %.4f" % cam.position.length())
+
+	cam.kick_fov(4.0, 0.05, 0.0, 0.1)
+	await get_tree().create_timer(0.08).timeout
+	var kicked: float = cam.fov
+	await get_tree().create_timer(0.4).timeout
+	_check(kicked > 78.5, "el kick de FOV empuja", "%.1f" % kicked)
+	_check(absf(cam.fov - 78.0) < 0.2, "y vuelve solo a la base", "%.1f" % cam.fov)
+
+	cam.kick_fov(20.0, 0.01, 0.0, 0.01)
+	await get_tree().create_timer(0.05).timeout
+	_check(cam.fov <= 83.1, "el tope duro de +-5 grados aguanta", "%.1f" % cam.fov)
+
+	cam.queue_free()
 	await get_tree().process_frame

@@ -61,13 +61,19 @@ func _ready() -> void:
 		await get_tree().process_frame
 	await _shoot("2_pov_esperando")
 
-	# --- 4. Lucha con el mar picado -------------------------------------------
+	# --- 4. La picada: chomp + boya hundida + "!" sobre la boya ---------------
 	Ocean.set_fury_immediate(5.0)
 	rod._start_bite()
-	rod._hook()
-	for _i in 100:
+	for _i in 25:
 		await get_tree().process_frame
-	await _shoot("3_pov_lucha_furia5")
+	await _shoot("3_pov_pica")
+
+	# --- 5. Lucha con el mar picado: caña doblada, sedal tenso ----------------
+	rod._hook()
+	# Forzamos tension alta un instante para fotografiar el sedal en ambar/rojo.
+	for _i in 140:
+		await get_tree().process_frame
+	await _shoot("4_pov_lucha_furia5")
 
 	print("capturas en: ", ProjectSettings.globalize_path(_dir))
 	get_tree().quit(0)
