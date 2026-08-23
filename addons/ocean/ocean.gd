@@ -18,6 +18,9 @@ extends Node
 
 signal sea_state_changed()
 signal waves_regenerated()
+signal events_changed()
+## Se emite una vez cuando un tsunami entra en el radio de aviso.
+signal tsunami_incoming(seconds_out: float)
 
 ## Escala Douglas: altura significativa (m) para cada punto del dial de furia.
 ## Se interpola en Hs y NUNCA en velocidad de viento: Hs escala como U^2, asi que
@@ -39,6 +42,8 @@ var ocean_seed: int = 0
 var wind_direction_deg: float = 30.0
 
 var _proxy := OceanWaveProxy.new()
+var _events := OceanEvents.new()
+var _warned_tsunami: bool = false
 var _fury: float = 3.0
 var _fury_target: float = 3.0
 var _paused: bool = false
@@ -122,11 +127,16 @@ func _apply_sea_state() -> void:
 
 ## Altura del agua bajo (o sobre) una posicion del mundo.
 func get_height(world_pos: Vector3) -> float:
-	return _proxy.height_at(Vector2(world_pos.x, world_pos.z), sim_time)
+	var xz := Vector2(world_pos.x, world_pos.z)
+	return _proxy.height_at(xz, sim_time) + _events.height_at(xz, sim_time)
 
 
+## Altura en un instante ARBITRARIO. Como todo el sistema es funcion pura de t,
+## esto permite consultar el FUTURO: es lo que hace posible telegrafiar el
+## tsunami sin ningun sistema adicional de prediccion.
 func get_height_at(world_pos: Vector3, t: float) -> float:
-	return _proxy.height_at(Vector2(world_pos.x, world_pos.z), t)
+	var xz := Vector2(world_pos.x, world_pos.z)
+	return _proxy.height_at(xz, t) + _events.height_at(xz, t)
 
 
 ## Cuanto esta sumergido un punto. Positivo = bajo el agua.
@@ -142,11 +152,17 @@ func get_displacement(world_xz: Vector2, t: float) -> Vector3:
 ## Usalo siempre que necesites las dos cosas (o sea, en toda la flotabilidad):
 ## pedirlas por separado duplica el coste de lo mas caro del sistema.
 func sample(world_pos: Vector3) -> Dictionary:
-	return _proxy.sample_at(Vector2(world_pos.x, world_pos.z), sim_time)
+	var xz := Vector2(world_pos.x, world_pos.z)
+	var out: Dictionary = _proxy.sample_at(xz, sim_time)
+	if _events.has_active():
+		out[&"height"] = float(out[&"height"]) + _events.height_at(xz, sim_time)
+		out[&"velocity"] = (out[&"velocity"] as Vector3) + _events.velocity_at(xz, sim_time)
+	return out
 
 
 func get_surface_velocity(world_pos: Vector3) -> Vector3:
-	return _proxy.surface_velocity_at(Vector2(world_pos.x, world_pos.z), sim_time)
+	var xz := Vector2(world_pos.x, world_pos.z)
+	return _proxy.surface_velocity_at(xz, sim_time) + _events.velocity_at(xz, sim_time)
 
 
 func get_normal(world_pos: Vector3) -> Vector3:
@@ -159,11 +175,56 @@ func get_normal(world_pos: Vector3) -> Vector3:
 ## marca literalmente donde te va a doler: el feedback visual y el mecanico
 ## salen del mismo sitio y el jugador siempre puede leer el mar.
 func get_breaking(world_pos: Vector3) -> float:
-	return _proxy.jacobian_at(Vector2(world_pos.x, world_pos.z), sim_time)
+	var xz := Vector2(world_pos.x, world_pos.z)
+	return _proxy.jacobian_at(xz, sim_time) - _events.break_penalty_at(xz, sim_time)
 
 
 func is_breaking(world_pos: Vector3) -> bool:
 	return get_breaking(world_pos) < 0.0
+
+
+# =============================================================================
+#  Tsunami
+# =============================================================================
+
+## Lanza un tsunami que llegara a [param target] dentro de [param seconds].
+##
+## Se especifica asi, y no por posicion de origen, porque lo que el diseñador
+## quiere decidir es CUANDO llega, no desde donde sale. El origen se calcula
+## hacia atras.
+func spawn_tsunami(target: Vector3, from_direction_deg: float, seconds: float,
+		amplitude: float = 18.0, celerity: float = 45.0, width: float = 90.0) -> int:
+	var ang := deg_to_rad(from_direction_deg)
+	# El tsunami avanza HACIA el objetivo desde la direccion indicada.
+	var dir := Vector2(-cos(ang), -sin(ang))
+	var target_xz := Vector2(target.x, target.z)
+	# Se le da margen de sobra por detras para que el perfil entero (incluida la
+	# depresion que va por delante) este ya formado al entrar en escena.
+	var origin := target_xz - dir * (celerity * seconds)
+	var idx := _events.spawn(origin, dir, amplitude, celerity, width, sim_time)
+	if idx >= 0:
+		_warned_tsunami = false
+		events_changed.emit()
+	return idx
+
+
+## Segundos hasta que la cresta alcance este punto. INF si no hay tsunami.
+func time_until_tsunami(world_pos: Vector3) -> float:
+	return _events.time_until_crest(Vector2(world_pos.x, world_pos.z), sim_time)
+
+
+func has_tsunami() -> bool:
+	return _events.has_active()
+
+
+func clear_events() -> void:
+	_events.clear_all()
+	_warned_tsunami = false
+	events_changed.emit()
+
+
+func get_events() -> OceanEvents:
+	return _events
 
 
 # =============================================================================
@@ -184,6 +245,10 @@ func apply_to_material(mat: ShaderMaterial) -> void:
 	# olas de 12 m el gradiente satura y todo el oceano se pinta del color de
 	# cresta: las bandas dejan de comunicar altura justo cuando mas importa.
 	mat.set_shader_parameter(&"height_scale", 0.6 / maxf(_proxy.measured_hs, 0.4))
+	var packed: Array = _events.pack()
+	mat.set_shader_parameter(&"event_a", packed[0])
+	mat.set_shader_parameter(&"event_b", packed[1])
+	mat.set_shader_parameter(&"event_c", packed[2])
 
 
 func set_paused(value: bool) -> void:

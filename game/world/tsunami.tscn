@@ -1,4 +1,4 @@
-[gd_scene load_steps=12 format=3]
+[gd_scene load_steps=14 format=3]
 
 [ext_resource type="Script" path="res://addons/ocean/ocean_surface.gd" id="1_surface"]
 [ext_resource type="Shader" path="res://addons/ocean/shaders/ocean_surface.gdshader" id="2_shader"]
@@ -7,6 +7,7 @@
 [ext_resource type="PackedScene" path="res://game/boat/barrel.tscn" id="5_barrel"]
 [ext_resource type="PackedScene" path="res://game/player/player.tscn" id="6_player"]
 [ext_resource type="PackedScene" path="res://addons/ocean/debug/ocean_debug_hud.tscn" id="7_hud"]
+[ext_resource type="Script" path="res://game/world/tsunami_director.gd" id="8_director"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_ocean"]
 render_priority = 0
@@ -30,11 +31,11 @@ shader_parameter/wave_count = 12
 shader_parameter/ocean_time = 0.0
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_sky"]
-sky_top_color = Color(0.235, 0.318, 0.4, 1)
-sky_horizon_color = Color(0.545, 0.596, 0.62, 1)
+sky_top_color = Color(0.196, 0.255, 0.325, 1)
+sky_horizon_color = Color(0.478, 0.522, 0.549, 1)
 sky_curve = 0.15
-ground_bottom_color = Color(0.157, 0.196, 0.239, 1)
-ground_horizon_color = Color(0.545, 0.596, 0.62, 1)
+ground_bottom_color = Color(0.13, 0.161, 0.196, 1)
+ground_horizon_color = Color(0.478, 0.522, 0.549, 1)
 sun_angle_max = 24.0
 sun_curve = 0.08
 
@@ -45,19 +46,19 @@ sky_material = SubResource("ProceduralSkyMaterial_sky")
 background_mode = 2
 sky = SubResource("Sky_main")
 ambient_light_source = 3
-ambient_light_color = Color(0.482, 0.573, 0.647, 1)
+ambient_light_color = Color(0.443, 0.522, 0.596, 1)
 ambient_light_sky_contribution = 0.65
 ambient_light_energy = 0.5
 tonemap_mode = 3
 fog_enabled = true
-fog_light_color = Color(0.541, 0.6, 0.643, 1)
+fog_light_color = Color(0.494, 0.549, 0.596, 1)
 fog_light_energy = 0.9
 fog_density = 0.0055
 fog_sky_affect = 0.35
 fog_height = 40.0
 fog_height_density = 0.02
 
-[node name="Toybox" type="Node3D"]
+[node name="Tsunami" type="Node3D"]
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
 environment = SubResource("Environment_main")
@@ -72,8 +73,8 @@ directional_shadow_max_distance = 180.0
 [node name="OceanSurface" type="MeshInstance3D" parent="."]
 material_override = SubResource("ShaderMaterial_ocean")
 script = ExtResource("1_surface")
-size = 512.0
-subdivisions = 255
+size = 900.0
+subdivisions = 383
 follow_camera = true
 
 [node name="ParityMarkers" type="MultiMeshInstance3D" parent="."]
@@ -109,6 +110,24 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.3, 1.5, 1.6)
 [node name="Barrel6" parent="Cargo" instance=ExtResource("5_barrel")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.6, 1.5, 1.6)
 
+[node name="TsunamiDirector" type="Node" parent="."]
+script = ExtResource("8_director")
+reference_path = NodePath("../FishingBoat")
+environment_path = NodePath("../WorldEnvironment")
+calm_seconds = 8.0
+storm_seconds = 30.0
+lead_seconds = 95.0
+fury_calm = 2.5
+fury_storm = 7.5
+fury_impact = 9.0
+amplitude = 19.0
+celerity = 45.0
+width = 90.0
+from_direction_deg = 90.0
+autostart = true
+loop = true
+
 [node name="OceanDebugHUD" parent="." instance=ExtResource("7_hud")]
 parity_markers_path = NodePath("../ParityMarkers")
 boat_path = NodePath("../FishingBoat")
+director_path = NodePath("../TsunamiDirector")

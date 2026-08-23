@@ -70,18 +70,10 @@ toggle_mouse={
 
 [physics]
 
-3d/physics_engine="Jolt Physics"
-; 120 Hz: la flotabilidad multi-sonda se vuelve inestable a 60 cuando el mar se
-; pone bravo. Max Physics Steps sube en proporcion, porque si no el juego entra
-; en camara lenta al caer los FPS en vez de saltar pasos.
 common/physics_ticks_per_second=120
 common/max_physics_steps_per_frame=16
+3d/physics_engine="Jolt Physics"
 
 [rendering]
 
-; Vulkan en desarrollo. En 4.6 el default de Windows es D3D12, donde el bug de
-; compute (godotengine/godot#118113) sigue vivo: su fix tiene milestone 4.7 y NO
-; esta en la rama 4.6.x. Antes de cualquier build publica hay que hacer un pase
-; de QA en D3D12, que es lo que van a tener los jugadores.
-rendering_device/driver.windows="vulkan"
 anti_aliasing/quality/msaa_3d=2

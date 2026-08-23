@@ -38,6 +38,7 @@ func _ready() -> void:
 		# no cada frame.
 		Ocean.sea_state_changed.connect(_push_wave_uniforms)
 		Ocean.waves_regenerated.connect(_push_wave_uniforms)
+		Ocean.events_changed.connect(_push_wave_uniforms)
 		_push_wave_uniforms()
 
 

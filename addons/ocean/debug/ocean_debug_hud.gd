@@ -10,6 +10,7 @@ extends CanvasLayer
 
 @export var parity_markers_path: NodePath
 @export var boat_path: NodePath
+@export var director_path: NodePath
 
 @onready var _slider: HSlider = %FurySlider
 @onready var _readout: RichTextLabel = %Readout
@@ -18,6 +19,7 @@ extends CanvasLayer
 
 var _parity_markers: Node3D
 var _boat: FloatingBody3D
+var _director: TsunamiDirector
 var _slam_flash: float = 0.0
 var _peak_wave: float = 0.0
 
@@ -25,6 +27,7 @@ var _peak_wave: float = 0.0
 func _ready() -> void:
 	_parity_markers = get_node_or_null(parity_markers_path) as Node3D
 	_boat = get_node_or_null(boat_path) as FloatingBody3D
+	_director = get_node_or_null(director_path) as TsunamiDirector
 
 	_slider.min_value = 0.0
 	_slider.max_value = 10.0
@@ -79,6 +82,25 @@ func _process(delta: float) -> void:
 	var steep := Ocean.steepness_sum()
 
 	var lines := PackedStringArray()
+
+	if Ocean.has_tsunami():
+		var eta := Ocean.time_until_tsunami(here)
+		var act_label := _director.act_name() if _director != null else "TSUNAMI"
+		# El color del contador es la telegrafia: pasa a rojo cuando ya no da
+		# tiempo a hacer nada.
+		var col := "#8fe388"
+		if eta < 10.0:
+			col = "#ff6b6b"
+		elif eta < 55.0:
+			col = "#ffd166"
+		lines.append("[color=%s][b]%s[/b][/color]" % [col, act_label])
+		if eta > -30.0 and eta < 900.0:
+			lines.append("[color=%s][b]impacto en %+.1f s[/b][/color]" % [col, eta])
+		# Altura que el tsunami aporta AQUI: negativa mientras el mar se retira.
+		var ev_h := Ocean.get_events().height_at(Vector2(here.x, here.z), Ocean.sim_time)
+		lines.append("aporte del evento %+.2f m" % ev_h)
+		lines.append("")
+
 	lines.append("[b]MAR[/b]")
 	lines.append("furia            [b]%.2f[/b] / 10" % Ocean.fury)
 	lines.append("Hs objetivo      %.2f m" % Ocean.target_hs())

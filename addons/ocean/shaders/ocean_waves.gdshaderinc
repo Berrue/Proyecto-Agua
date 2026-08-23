@@ -125,13 +125,12 @@ vec3 ocean_normal(vec2 p, float t) {
 // ALTO, y en multijugador dos clientes con presets distintos siguen viendo el
 // barco en el mismo sitio.
 // -----------------------------------------------------------------------------
-const int OCEAN_DETAIL_OCTAVES = 4;
+const int OCEAN_DETAIL_OCTAVES = 3;
 const vec4 OCEAN_DETAIL[OCEAN_DETAIL_OCTAVES] = {
 	// (dir.x, dir.z, longitud de onda, peso)
 	vec4( 0.862,  0.507, 7.30, 1.00),
 	vec4(-0.423,  0.906, 4.10, 0.62),
-	vec4( 0.978, -0.208, 2.20, 0.38),
-	vec4(-0.707, -0.707, 1.15, 0.22)
+	vec4( 0.978, -0.208, 2.60, 0.38)
 };
 
 vec2 ocean_detail_gradient(vec2 p, float t) {
@@ -149,4 +148,102 @@ vec2 ocean_detail_gradient(vec2 p, float t) {
 		grad += dir * (amp * k * cos(theta));
 	}
 	return grad;
+}
+
+// =============================================================================
+//  CAPA DE EVENTOS - tsunami. Espejo exacto de addons/ocean/ocean_events.gd
+// =============================================================================
+//  Un espectro es estadisticamente ESTACIONARIO: no hay parametrizacion de
+//  viento que produzca un frente solitario dirigido. El tsunami se AUTORA.
+//
+//  El perfil es una onda N: una DEPRESION viaja por delante de la cresta, asi
+//  que la retirada del mar emerge de la misma formula en vez de estar
+//  scripteada aparte.
+// =============================================================================
+
+const int OCEAN_MAX_EVENTS = 2;
+const float OCEAN_SLOPE_BREAK_SCALE = 8.0;
+
+// ev_a[i] = (origen.x, origen.z, dir.x, dir.z)
+// ev_b[i] = (amplitud, celeridad, anchura, t0)
+// ev_c[i] = (lead, spread, depression, activo)
+uniform vec4 event_a[OCEAN_MAX_EVENTS];
+uniform vec4 event_b[OCEAN_MAX_EVENTS];
+uniform vec4 event_c[OCEAN_MAX_EVENTS];
+
+// sech(x)^2 estable. `cosh` desborda para |x| grande; esta forma tiende a cero.
+float ocean_sech2(float x) {
+	float e = exp(-abs(x));
+	float s = 2.0 * e / (1.0 + e * e);
+	return s * s;
+}
+
+float ocean_dsech2(float x) {
+	float e = exp(-abs(x));
+	float s = 2.0 * e / (1.0 + e * e);
+	float th = (1.0 - e * e) / (1.0 + e * e);
+	th = x < 0.0 ? -th : th;
+	return -2.0 * s * s * th;
+}
+
+float ocean_event_phase(int i, vec2 p, float t) {
+	vec2 origin = event_a[i].xy;
+	vec2 dir = event_a[i].zw;
+	float celerity = event_b[i].y;
+	float width = event_b[i].z;
+	float t0 = event_b[i].w;
+	float d = dot(p - origin, dir);
+	return (d - celerity * (t - t0)) / width;
+}
+
+float ocean_event_height(vec2 p, float t) {
+	float total = 0.0;
+	for (int i = 0; i < OCEAN_MAX_EVENTS; i++) {
+		if (event_c[i].w < 0.5) { continue; }
+		float amp = event_b[i].x;
+		float lead = event_c[i].x;
+		float spread = event_c[i].y;
+		float depression = event_c[i].z;
+		float u = ocean_event_phase(i, p, t);
+		total += amp * (ocean_sech2(u) - depression * ocean_sech2((u - lead) / spread));
+	}
+	return total;
+}
+
+float ocean_event_slope(vec2 p, float t) {
+	float total = 0.0;
+	for (int i = 0; i < OCEAN_MAX_EVENTS; i++) {
+		if (event_c[i].w < 0.5) { continue; }
+		float amp = event_b[i].x;
+		float width = event_b[i].z;
+		float lead = event_c[i].x;
+		float spread = event_c[i].y;
+		float depression = event_c[i].z;
+		float u = ocean_event_phase(i, p, t);
+		total += (amp / width) * (ocean_dsech2(u)
+			- (depression / spread) * ocean_dsech2((u - lead) / spread));
+	}
+	return total;
+}
+
+// Penalizacion al Jacobiano por la pendiente del frente: es lo que pinta de
+// blanco la cara del tsunami. `Ocean.get_breaking()` resta exactamente esto
+// mismo en CPU, asi que lo que se ve blanco es lo que revuelca.
+float ocean_event_break_penalty(vec2 p, float t) {
+	return abs(ocean_event_slope(p, t)) * OCEAN_SLOPE_BREAK_SCALE;
+}
+
+// -----------------------------------------------------------------------------
+// Patron de espuma. Sin esto la espuma es una SABANA blanca uniforme: en cuanto
+// una zona rompe entera se pinta de un solo color plano y el muro del tsunami
+// deja de leerse como agua. Rompiendola en placas recupera la silueta.
+//
+// Tres senos en vez de una textura de ruido: sin dependencias, sin fetch, y
+// deliberadamente de baja frecuencia para que no aliasee al alejarse.
+// -----------------------------------------------------------------------------
+float ocean_foam_pattern(vec2 p, float t) {
+	float n = sin(dot(p, vec2(0.196, 0.133)) + t * 0.55);
+	n += sin(dot(p, vec2(-0.108, 0.171)) - t * 0.37);
+	n += sin(dot(p, vec2(0.311, -0.247)) + t * 0.81);
+	return n * 0.1667 + 0.5;
 }
