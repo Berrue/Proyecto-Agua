@@ -80,7 +80,7 @@ func _setup_first_person_body() -> void:
 	if model == null:
 		return
 	for mesh: MeshInstance3D in _body_meshes(model):
-		mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
 	_add_hand(model, &"palma_R", hand_grip_top)
 	_add_hand(model, &"palma_L", hand_grip_bottom)
 
@@ -106,6 +106,13 @@ func _add_hand(model: Node3D, part_name: StringName, grip: float) -> void:
 	# Una mano flotando delante de la camara no proyecta sombra: la sombra buena,
 	# la del cuerpo entero, ya la esta tirando el modelo.
 	hand.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# ...y tampoco las RECIBE. El cuerpo invisible te sigue tapando el sol, y sin
+	# esto las manos se ponen grises justo cuando mas las miras (peleando).
+	var mat := src.get_active_material(0)
+	if mat is StandardMaterial3D:
+		var view_mat := (mat as StandardMaterial3D).duplicate() as StandardMaterial3D
+		view_mat.disable_receive_shadows = true
+		hand.material_override = view_mat
 	mount.add_child(hand)
 	hands.append(hand)
 
