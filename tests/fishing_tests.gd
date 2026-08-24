@@ -25,13 +25,33 @@ func _ready() -> void:
 	_test_hold_click_is_not_a_strategy()
 	_test_slack_spits_with_warning()
 	_test_fish_tires()
+	_test_species_tiers()
+	_test_doubled_roster()
+	_test_tier_reaction_window()
+	_test_legendary_is_rare()
+	_test_rod_tiers_ladder()
+	_test_rod_strengthens_line()
+	_test_rod_reels_faster()
+	_test_bait_never_raises_band()
+	_test_bait_biases_to_the_big_one()
+	await _test_bait_charges_and_bucket()
+	await _test_staked_bite_window()
 	await _test_fish_body()
 	await _test_wiring()
 	_test_sfx_library()
 	_test_nibble_plan()
 	await _test_camera_feedback()
+	_test_lean_accompaniment()
+	await _test_camera_drag()
 	await _test_fishing_hud()
 	_report()
+
+
+## Tras el rig hay un BoneAttachment3D con el MISMO nombre que cada malla:
+## buscar por tipo o el cast a MeshInstance3D devuelve null.
+func _mesh_of(model: Node, part: String) -> MeshInstance3D:
+	var found := model.find_children(part, "MeshInstance3D", true, false)
+	return found[0] if not found.is_empty() else null
 
 
 func _check(condition: bool, label: String, detail: String = "") -> void:
@@ -65,8 +85,16 @@ func _sardina() -> Dictionary:
 	return FishSpecies.SPECIES[0]
 
 
+## Por nombre, no por indice: la tabla ahora termina en la legendaria.
 func _atun() -> Dictionary:
-	return FishSpecies.SPECIES[-1]
+	return _species_named("Atun")
+
+
+func _species_named(species_name: String) -> Dictionary:
+	for species in FishSpecies.SPECIES:
+		if String(species[&"name"]) == species_name:
+			return species
+	return {}
 
 
 # =============================================================================
@@ -200,7 +228,7 @@ func _test_fish_takes_line() -> void:
 ## tiron tiene que acercarse a la rotura incluso en calma.
 func _test_hold_click_is_not_a_strategy() -> void:
 	var m := FightModel.new()
-	m.start(FishSpecies.SPECIES[3], _rng(41)) # Bacalao, pull 0.55
+	m.start(_species_named("Bacalao"), _rng(41)) # Bacalao, pull 0.55
 	var peak: float = 0.0
 	var t: float = 0.0
 	while not m.landed and not m.snapped and not m.escaped and t < 25.0:
@@ -244,6 +272,364 @@ func _test_fish_tires() -> void:
 	_check(m.stamina < 0.9, "el pez se cansa peleando", "fuelle %.2f" % m.stamina)
 
 
+# =============================================================================
+#  Tiers de pez y de caña
+# =============================================================================
+
+
+## Todas las especies llevan tier 1-4 y el tier sigue a la banda de furia: el
+## pez del mar bravo es el pez dificil. Sin esta coherencia, la ventana de
+## reaccion por tier premiaria o castigaria al pez equivocado.
+func _test_species_tiers() -> void:
+	var ok := true
+	for s in FishSpecies.SPECIES:
+		var tier := FishSpecies.tier_of(s)
+		if tier < 1 or tier > 4:
+			ok = false
+		if float(s[&"min_fury"]) < 3.0 and tier != 1:
+			ok = false
+		if float(s[&"min_fury"]) >= 6.0 and tier < 3:
+			ok = false
+	_check(ok, "toda especie tiene tier 1-4 coherente con su banda")
+	_check(FishSpecies.tier_of(_sardina()) == 1 and FishSpecies.tier_of(_atun()) == 3,
+		"sardina tier 1, atun tier 3")
+	_check(FishSpecies.tier_of({&"name": "desconocido"}) == 1,
+		"un pez sin tier cuenta como banda A (el fallo seguro es el indulgente)")
+
+
+## La 2ª tanda: 16 especies (el doble por banda: 6/6/2/2) y la escalera de
+## pull SIN solapes entre tiers — el tier ES la dificultad, sin excepciones
+## que confundan la ventana de reaccion. Ademas, la calma sigue siendo de los
+## tres comunes con modelo (el invariante de fish_asset_tests, protegido
+## tambien desde aqui porque esta tabla es la que lo puede romper).
+func _test_doubled_roster() -> void:
+	_check(FishSpecies.SPECIES.size() == 16, "la tabla tiene 16 especies",
+		"%d" % FishSpecies.SPECIES.size())
+
+	var per_tier: Dictionary = {1: 0, 2: 0, 3: 0, 4: 0}
+	var min_pull: Dictionary = {1: 99.0, 2: 99.0, 3: 99.0, 4: 99.0}
+	var max_pull: Dictionary = {1: 0.0, 2: 0.0, 3: 0.0, 4: 0.0}
+	var calm_pool: int = 0
+	for s in FishSpecies.SPECIES:
+		var tier := FishSpecies.tier_of(s)
+		per_tier[tier] = int(per_tier[tier]) + 1
+		min_pull[tier] = minf(float(min_pull[tier]), float(s[&"pull"]))
+		max_pull[tier] = maxf(float(max_pull[tier]), float(s[&"pull"]))
+		if float(s[&"min_fury"]) <= 1.0:
+			calm_pool += 1
+	_check(per_tier[1] == 6 and per_tier[2] == 6 and per_tier[3] == 2
+		and per_tier[4] == 2, "el doble por banda: 6/6/2/2 especies por tier",
+		str(per_tier))
+	_check(float(max_pull[1]) < float(min_pull[2])
+		and float(max_pull[2]) < float(min_pull[3])
+		and float(max_pull[3]) < float(min_pull[4]),
+		"la escalera de pull no se solapa entre tiers",
+		"A %.2f-%.2f · B %.2f-%.2f · C %.2f-%.2f · L %.2f-%.2f" % [
+			float(min_pull[1]), float(max_pull[1]), float(min_pull[2]), float(max_pull[2]),
+			float(min_pull[3]), float(max_pull[3]), float(min_pull[4]), float(max_pull[4])])
+	_check(calm_pool == 3, "en furia <=1 siguen picando SOLO los tres con modelo",
+		"%d en el pool de calma" % calm_pool)
+
+
+## Sobrecarga garantizada (recogiendo con un mar absurdo): cuanto tarda el
+## sedal en partir desde que la tension entra en zona de rotura.
+func _time_to_snap(species: Dictionary, rod: RodTier = null) -> float:
+	var m := FightModel.new()
+	m.start(species, _rng(13), rod)
+	var t: float = 0.0
+	while not m.snapped and t < 10.0:
+		m.step(1.0 / 60.0, true, FightModel.Pull.NONE, 30.0)
+		t += 1.0 / 60.0
+	return t
+
+
+## LA QUEJA DEL PLAYTEST ("el sedal rompe demasiado rapido"), convertida en
+## test: la ventana de reaccion existe, es mayor cuanto mas humilde el pez, y
+## ni el pez heroico rompe de un latigazo (regla 8: avisar Y dar tiempo).
+func _test_tier_reaction_window() -> void:
+	var descending := true
+	for i in range(1, FightModel.SNAP_HOLD_BY_TIER.size()):
+		if FightModel.SNAP_HOLD_BY_TIER[i] > FightModel.SNAP_HOLD_BY_TIER[i - 1]:
+			descending = false
+	_check(descending, "la ventana de reaccion encoge al subir el tier")
+
+	var sardina_t := _time_to_snap(_sardina())
+	var atun_t := _time_to_snap(_atun())
+	var aguja_t := _time_to_snap(_species_named("Aguja azul"))
+	_check(sardina_t >= 1.4, "la sardina da ~1.5 s para soltar el clic (antes: 0.5)",
+		"%.2f s" % sardina_t)
+	_check(atun_t <= sardina_t * 0.5, "el atun exige mas del doble de reflejos",
+		"%.2f s vs %.2f s" % [atun_t, sardina_t])
+	_check(aguja_t < atun_t and aguja_t >= 0.4,
+		"la legendaria aprieta mas, pero jamas roba", "%.2f s" % aguja_t)
+
+
+## La legendaria: no existe bajo su furia y en la suya pica a cuentagotas
+## (~1 de cada 13 lances, documento de diseño §3).
+func _test_legendary_is_rare() -> void:
+	var rng := _rng(123)
+	var below := 0
+	for _i in 400:
+		if FishSpecies.tier_of(FishSpecies.choose(6.5, rng)) == 4:
+			below += 1
+	_check(below == 0, "con furia 6.5 la legendaria ni existe")
+	var seen := 0
+	for _i in 600:
+		if FishSpecies.tier_of(FishSpecies.choose(7.5, rng)) == 4:
+			seen += 1
+	_check(seen > 10 and seen < 120, "con furia 7.5 pica a cuentagotas",
+		"%d de 600 lances" % seen)
+
+
+## El arbol de cañas existe como .tres y escala de verdad: mas sedal, mas
+## carrete, mas gracia. La T1 es la base neutra — la caña de siempre.
+func _test_rod_tiers_ladder() -> void:
+	var tiers: Array[RodTier] = []
+	for path in FishingRod.TIER_PATHS:
+		var t := load(path) as RodTier
+		_check(t != null, "existe " + path)
+		if t != null:
+			tiers.append(t)
+	if tiers.size() != 3:
+		return
+	_check(tiers[0].line_strength == 1.0 and tiers[0].reel_factor == 1.0
+		and tiers[0].snap_hold_bonus == 0.0 and tiers[0].cast_factor == 1.0,
+		"la caña de iniciacion es la base neutra")
+	_check(tiers[1].line_strength > tiers[0].line_strength
+		and tiers[2].line_strength > tiers[1].line_strength,
+		"el sedal aguanta mas en cada tier")
+	_check(tiers[2].reel_factor > tiers[1].reel_factor
+		and tiers[1].reel_factor > 1.0, "y el carrete recoge mas rapido")
+	_check(tiers[2].snap_hold_bonus > tiers[1].snap_hold_bonus
+		and tiers[1].snap_hold_bonus > 0.0, "y la gracia extra crece")
+
+
+## La caña de altura aguanta donde la de iniciacion parte: mismo atun, misma
+## semilla, misma codicia — solo cambia el aparejo. La puerta blanda medida.
+func _test_rod_strengthens_line() -> void:
+	var alta := load(FishingRod.TIER_PATHS[2]) as RodTier
+	var weak := FightModel.new()
+	weak.start(_atun(), _rng(5))
+	var strong := FightModel.new()
+	strong.start(_atun(), _rng(5), alta)
+	for _i in 180: # 3 s de recoger contrando MAL con marejada
+		weak.step(1.0 / 60.0, true, weak.pull_dir, 3.0)
+		strong.step(1.0 / 60.0, true, strong.pull_dir, 3.0)
+	_check(weak.snapped, "la caña de iniciacion parte contra la codicia con atun")
+	_check(not strong.snapped, "la de altura aguanta el mismo castigo")
+	_check(strong.max_tension() > weak.max_tension(),
+		"porque su sedal aguanta de verdad mas tension",
+		"%.2f vs %.2f" % [strong.max_tension(), weak.max_tension()])
+
+
+## Juega una lucha limpia (contrar el tiron, recoger en la pausa) y devuelve
+## los segundos hasta que termina como sea.
+func _play_clean(m: FightModel) -> float:
+	var t: float = 0.0
+	while not m.landed and not m.snapped and not m.escaped and t < 60.0:
+		var counter := FightModel.Pull.NONE
+		if m.pull_dir == FightModel.Pull.LEFT:
+			counter = FightModel.Pull.RIGHT
+		elif m.pull_dir == FightModel.Pull.RIGHT:
+			counter = FightModel.Pull.LEFT
+		m.step(1.0 / 60.0, not m.is_pulling(), counter, 1.0)
+		t += 1.0 / 60.0
+	return t
+
+
+## Mas carrete = capturas mas rapidas. La promesa central de la mejora ("mas
+## peces por salida"), medida con la misma lucha limpia y la misma semilla.
+func _test_rod_reels_faster() -> void:
+	var alta := load(FishingRod.TIER_PATHS[2]) as RodTier
+	var base := FightModel.new()
+	base.start(_sardina(), _rng(21))
+	var mejor := FightModel.new()
+	mejor.start(_sardina(), _rng(21), alta)
+	var t_base := _play_clean(base)
+	var t_mejor := _play_clean(mejor)
+	_check(base.landed and mejor.landed, "ambas cañas terminan la lucha limpia")
+	_check(t_mejor <= t_base * 0.9, "la caña de altura captura claramente mas rapido",
+		"%.1f s frente a %.1f s" % [t_mejor, t_base])
+
+
+# =============================================================================
+#  El cebo (PESCA.md paso 3)
+# =============================================================================
+
+## LA REGLA QUE EL CEBO NO PUEDE ROMPER: compra atencion, no peces que el mar
+## no da. Con cebo del mejor y furia de calma NO puede aparecer un pez de otra
+## banda — si esto falla, la tesis del juego ("el pez caro vive donde el mar es
+## peor") se vende en la lonja y el mar deja de ser el antagonista.
+func _test_bait_never_raises_band() -> void:
+	var vivo := load("res://resources/cebos/cebo_vivo.tres") as TipoCebo
+	_check(vivo != null and vivo.sesgo > 0.0, "el cebo vivo existe y sesga")
+	if vivo == null:
+		return
+	var rng := _rng(4242)
+	var intruso := ""
+	for _i in 800:
+		var s := FishSpecies.choose(1.0, rng, vivo.sesgo)
+		if float(s[&"min_fury"]) > 1.0:
+			intruso = String(s[&"name"])
+	_check(intruso.is_empty(),
+		"con cebo del mejor, la calma sigue sin dar peces de otra banda", intruso)
+
+	# Y en banda B tampoco cuela un atun (banda C) por mucho cebo que se eche.
+	var alto := 0
+	for _i in 800:
+		if FishSpecies.tier_of(FishSpecies.choose(5.0, rng, vivo.sesgo)) >= 3:
+			alto += 1
+	_check(alto == 0, "ni en furia 5 aparece la banda C", "%d colados" % alto)
+
+
+## Lo que el cebo SI compra: que pique la pieza buena de tu banda en vez de la
+## sardina de siempre. Se mide en valor medio de la captura, con la misma
+## semilla y la misma furia — solo cambia el cebo.
+func _test_bait_biases_to_the_big_one() -> void:
+	var vivo := load("res://resources/cebos/cebo_vivo.tres") as TipoCebo
+	var comun := load("res://resources/cebos/cebo_comun.tres") as TipoCebo
+	if vivo == null or comun == null:
+		_check(false, "los dos cebos existen")
+		return
+	_check(is_zero_approx(comun.sesgo) and comun.espera_factor < 1.0,
+		"la masilla solo compra tiempo (sesgo 0, espera mas corta)",
+		"sesgo %.2f · espera x%.2f" % [comun.sesgo, comun.espera_factor])
+	_check(vivo.espera_factor < comun.espera_factor,
+		"y el cebo vivo ademas acorta mas la espera",
+		"x%.2f vs x%.2f" % [vivo.espera_factor, comun.espera_factor])
+
+	var sin_cebo: float = _valor_medio(0.0, 4000)
+	var con_cebo: float = _valor_medio(vivo.sesgo, 4000)
+	_check(con_cebo > sin_cebo * 1.1,
+		"el cebo vivo sube claramente el valor medio de lo que pica",
+		"%.1f monedas frente a %.1f" % [con_cebo, sin_cebo])
+
+
+func _valor_medio(sesgo: float, tiradas: int) -> float:
+	var rng := _rng(31415)
+	var total: float = 0.0
+	for _i in tiradas:
+		total += float(FishSpecies.choose(4.0, rng, sesgo)[&"value"])
+	return total / float(tiradas)
+
+
+## El cubo y las cargas: cebar coge lo que cabe (ni mas ni menos), el cubo
+## descuenta EXACTAMENTE eso, cambiar de cebo tira lo puesto, y cada picada se
+## come una carga — pesques o no. Sin esto el cebo no seria una decision.
+func _test_bait_charges_and_bucket() -> void:
+	var rod: FishingRod = load("res://game/fishing/fishing_rod.tscn").instantiate()
+	add_child(rod)
+	var cubo: CuboCebo = load("res://game/props/cubo_cebo.tscn").instantiate()
+	add_child(cubo)
+	await get_tree().process_frame
+
+	var vivo := load("res://resources/cebos/cebo_vivo.tres") as TipoCebo
+	_check(rod.cebo_puesto() == null, "la caña arranca a pelo, sin cebo")
+
+	# El fallo silencioso que ya se comio el gancho una vez: una Zona nacida en
+	# capa 0 es invisible para la mira del portador, asi que cebar seria
+	# imposible EN EL JUEGO aunque todo lo de abajo pase. Sin warning ninguno.
+	var zona := cubo.get_node_or_null(^"Zona") as Area3D
+	_check(zona != null and zona.collision_layer != 0,
+		"la Zona del cubo es visible para la mira del portador")
+
+	var antes: int = cubo.cargas
+	_check(cubo.cebar(rod), "E en el cubo ceba la caña")
+	_check(rod.cebo_cargas == FishingRod.CEBO_CARGAS_MAX,
+		"y llena el anzuelo hasta el tope", "%d" % rod.cebo_cargas)
+	_check(cubo.cargas == antes - FishingRod.CEBO_CARGAS_MAX,
+		"el cubo descuenta exactamente lo que se llevo",
+		"%d -> %d" % [antes, cubo.cargas])
+	_check(not cubo.cebar(rod), "cebar con la caña llena no gasta cubo")
+
+	# Cambiar de cebo TIRA lo que quedaba: no se mezclan dos cebos en un anzuelo.
+	rod.cebo_cargas = 2
+	rod.cebar(vivo, 10)
+	_check(rod.cebo == vivo and rod.cebo_cargas == FishingRod.CEBO_CARGAS_MAX,
+		"cambiar de cebo tira lo puesto y llena del nuevo", "%d" % rod.cebo_cargas)
+
+	# La picada se come una carga aunque el pez se pierda despues.
+	rod.hooked_species = _sardina()
+	var cargas_antes: int = rod.cebo_cargas
+	rod._start_bite()
+	_check(rod.cebo_cargas == cargas_antes - 1,
+		"cada picada se come una carga", "%d -> %d" % [cargas_antes, rod.cebo_cargas])
+
+	# Sin cargas, el cebo deja de existir a todos los efectos.
+	rod.cebo_cargas = 0
+	_check(rod.cebo_puesto() == null and is_zero_approx(rod._cebo_sesgo()),
+		"sin cargas la caña vuelve a pescar a pelo")
+
+	# Y un cubo vacio no ceba ni miente en el prompt.
+	cubo.cargas = 0
+	_check(cubo.vacio() and not cubo.cebar(rod), "el cubo vacio no ceba")
+
+	rod.queue_free()
+	cubo.queue_free()
+	await get_tree().process_frame
+
+
+## LA PROMESA DEL SOPORTE DE BORDA (PESCA.md paso 2, PORTEO.md fase B): "clavas
+## la caña, achicas o estibas, y vuelves al !". Si la ventana de picada no da
+## para cruzar la cubierta, la caña clavada solo sirve para PERDER peces: la
+## feature existiria y su promesa no. Se mide contra la geometria REAL del
+## barco, asi que agrandarlo o recortar la ventana rompe este test a proposito.
+##
+## Presupuesto de gestos que NO son correr (reaccion al chomp, soltar lo que
+## portas, apuntar al soporte con el rayo del Portador, E + clic). Medido a
+## ojo de playtest, deliberadamente conservador.
+const GESTOS_SEGUNDOS := 1.0
+
+
+func _test_staked_bite_window() -> void:
+	_check(FishingRod.BITE_WINDOW_SOPORTE > FishingRod.BITE_WINDOW,
+		"la caña clavada da mas ventana que la caña en mano",
+		"%.1f s vs %.1f s" % [FishingRod.BITE_WINDOW_SOPORTE, FishingRod.BITE_WINDOW])
+
+	var boat: Node3D = load("res://game/boat/fishing_boat.tscn").instantiate()
+	add_child(boat)
+	await get_tree().process_frame
+
+	var soportes := boat.find_children("*", "SoporteCania", true, false)
+	_check(soportes.size() >= 2, "el barco trae soportes en las dos bandas",
+		"%d" % soportes.size())
+
+	var player: Player = load("res://game/player/player.tscn").instantiate()
+	var walk: float = player.walk_speed
+	player.queue_free()
+
+	if soportes.size() >= 2:
+		# El peor trayecto util: del soporte de una banda al de la otra.
+		var diagonal: float = (soportes[0] as Node3D).global_position.distance_to(
+			(soportes[1] as Node3D).global_position)
+		var necesario: float = GESTOS_SEGUNDOS + diagonal / maxf(walk, 0.001)
+		_check(FishingRod.BITE_WINDOW_SOPORTE >= necesario,
+			"y esa ventana cubre cruzar la cubierta y retomarla",
+			"ventana %.1f s frente a %.1f s necesarios (%.2f m a %.1f m/s)" % [
+				FishingRod.BITE_WINDOW_SOPORTE, necesario, diagonal, walk])
+		# El fallo que motivo el cambio: con la ventana de mano no se llegaba.
+		_check(FishingRod.BITE_WINDOW < necesario,
+			"(y con la ventana de mano NO se llegaba: por eso existe la larga)",
+			"%.1f s frente a %.1f s" % [FishingRod.BITE_WINDOW, necesario])
+
+	# Y la caña elige la ventana por DONDE esta, no por quien pregunta.
+	var rod: FishingRod = load("res://game/fishing/fishing_rod.tscn").instantiate()
+	add_child(rod)
+	await get_tree().process_frame
+	rod.hooked_species = _sardina()
+	rod._start_bite()
+	var en_mano: float = rod._bite_left
+	rod.soporte = soportes[0] if not soportes.is_empty() else Node3D.new()
+	rod._start_bite()
+	_check(is_equal_approx(en_mano, FishingRod.BITE_WINDOW)
+		and is_equal_approx(rod._bite_left, FishingRod.BITE_WINDOW_SOPORTE),
+		"la ventana la decide donde esta la caña, no quien pregunta",
+		"mano %.1f s · clavada %.1f s" % [en_mano, rod._bite_left])
+	rod.queue_free()
+	boat.queue_free()
+	await get_tree().process_frame
+
+
 ## El pez fisico: masa real, escala por peso, y FLOTA si cae al agua.
 func _test_fish_body() -> void:
 	Ocean.set_fury_immediate(0.0)
@@ -263,8 +649,8 @@ func _test_fish_body() -> void:
 	fish.queue_free()
 
 
-## Cableado: el pescador esta montado, en primera persona solo se le ven las
-## manos (ni cuerpo ni cuello), la caña cuelga de la camara con su escena de pez
+## Cableado: el pescador esta montado, en primera persona solo se le ve un brazo
+## (ni cuerpo ni cuello), la caña cuelga de la camara con su escena de pez
 ## asignada, y las manos ocupadas bloquean el movimiento de verdad.
 func _test_wiring() -> void:
 	var scene: Node3D = load("res://game/world/toybox.tscn").instantiate()
@@ -277,39 +663,58 @@ func _test_wiring() -> void:
 	_check(model != null, "el pescador esta montado en el jugador")
 	if model != null:
 		var solo_sombra := GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
+		var body_meshes := model.find_children("*", "MeshInstance3D", true, false)
+		_check(not body_meshes.is_empty(), "el pescador conserva geometria dibujable")
 		var drawn: Array[String] = []
-		for mesh: MeshInstance3D in model.find_children("*", "MeshInstance3D", true, false):
+		for mesh: MeshInstance3D in body_meshes:
 			if mesh.visible and mesh.cast_shadow != solo_sombra:
 				drawn.append(mesh.name)
 		_check(drawn.is_empty(), "no se dibuja ni una pieza del cuerpo en primera persona",
 			"se dibujan: %s" % ", ".join(drawn))
-		var neck := model.find_child("cuello", true, false) as MeshInstance3D
-		_check(neck != null and neck.cast_shadow == solo_sombra,
-			"el cuello tampoco (era lo que mas cantaba al mirar abajo)")
-		var torso := model.find_child("chubasquero_cuerpo", true, false) as MeshInstance3D
-		_check(torso != null and torso.cast_shadow == solo_sombra,
-			"pero el cuerpo sigue proyectando sombra en cubierta")
+		var proyectan_sombra := true
+		for mesh: MeshInstance3D in body_meshes:
+			proyectan_sombra = proyectan_sombra and mesh.cast_shadow == solo_sombra
+		_check(proyectan_sombra,
+			"cuerpo, cuello y cara siguen proyectando sombra en cubierta")
 
-		_check(player.hands.size() == 2, "las dos manos existen como viewmodel",
-			"hay %d" % player.hands.size())
-		for hand: MeshInstance3D in player.hands:
-			_check(hand.visible and hand.is_inside_tree(), "la mano %s se dibuja" % hand.name)
-			_check(hand.get_parent() != null and hand.get_parent().name == "RodPivot",
-				"y cuelga del mango de la caña, no de la camara")
+		_check(player.arm != null, "el brazo del viewmodel existe")
+		if player.arm != null:
+			_check(player.arm.visible and player.arm.is_inside_tree(), "y se dibuja")
+			_check(player.arm.get_parent() != null and player.arm.get_parent().name == "RodPivot",
+				"colgado del mango de la caña, no de la camara")
+			var bulto := player.arm.mesh.get_aabb().size * player.arm.scale
+			_check(bulto.y > bulto.x * 2.5, "y es un brazo, no un muñon",
+				"%.2f m de largo por %.2f de ancho" % [bulto.y, bulto.x])
 
 		# El toggle de tercera persona (capturas y, manana, los demas jugadores).
 		player.set_body_visible(true)
-		var back: MeshInstance3D = model.find_child("chubasquero_cuerpo", true, false)
-		_check(back != null and back.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_ON,
-			"en tercera persona vuelve el cuerpo entero")
-		_check(not player.hands[0].visible, "y se apagan las manos del viewmodel")
+		var cuerpo_visible := true
+		for mesh: MeshInstance3D in body_meshes:
+			cuerpo_visible = cuerpo_visible and (
+				mesh.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_ON)
+		_check(cuerpo_visible, "en tercera persona vuelve el cuerpo entero")
+		_check(player.arm != null and not player.arm.visible,
+			"y se apaga el brazo del viewmodel")
 		player.set_body_visible(false)
 
 	var rod := player.get_node_or_null(^"Camera3D/FishingRod") as FishingRod
 	_check(rod != null, "la caña cuelga de la camara")
 	if rod != null:
 		_check(rod.fish_scene != null, "con su escena de pez asignada")
+		_check(rod.tier != null and rod.tier.tier_name != "",
+			"y un tier de aparejo montado de serie")
 		_check(rod.get_node_or_null(^"RodPivot/Tip") != null, "y su punta para el sedal")
+		_check_arte_cania(rod)
+		# El otro fallo mudo del latigazo: que el asset cargue pero nadie lo
+		# cablee. Cuelga del pivote para que salga de la caña, no de la camara.
+		_check(rod._cast_p != null and rod._cast_p.stream == SfxLibrary.cast_whip
+			and rod._cast_p.get_parent() == rod.get_node(^"RodPivot"),
+			"con el latigazo cableado en la caña")
+		# La cama de recogida es top_level: si no, seguiria a la camara y el
+		# forcejeo dejaria de venir de donde esta el pez.
+		_check(rod._haul_p != null and rod._haul_p.stream == SfxLibrary.haul_loop
+			and rod._haul_p.top_level and rod._haul_p.volume_db < -50.0,
+			"y la cama de recogida cableada, muda y en el mundo")
 
 	player.hands_busy = true
 	_check(player._input_direction() == Vector3.ZERO,
@@ -321,6 +726,93 @@ func _test_wiring() -> void:
 
 	scene.queue_free()
 	await get_tree().process_frame
+
+
+## El arte de la caña es un GLB (`tools/build_fishing_rod.py`), y cambiar de
+## primitivas a modelo abrio tres fallos que NO gritan:
+##
+## 1. Que el GLB no cargue o cambie de sitio: la caña sale invisible y el juego
+##    sigue funcionando perfectamente, lanzando desde la nada.
+## 2. Que la punta del cuerpo se despegue del nodo `Tip`: el sedal nace en el
+##    aire, unos centimetros por delante o por detras de la caña.
+## 3. Que la malla `Grip` se renombre al reconstruir el modelo: `_apply_tier`
+##    no encuentra a quien tintar, sale por el `return` y el color del aparejo
+##    deja de verse sin un solo error en consola.
+func _check_arte_cania(rod: FishingRod) -> void:
+	var cania := rod.get_node_or_null(^"RodPivot/Cania") as Node3D
+	_check(cania != null, "con el modelo de caña colgando del pivote")
+	if cania == null:
+		return
+	var piezas := {}
+	for m: MeshInstance3D in cania.find_children("*", "MeshInstance3D", true, false):
+		piezas[m.name] = m
+	_check(piezas.has("Blank") and piezas.has("Guides") and piezas.has("ReelRotor"),
+		"con cuerpo, anillas y carrete")
+
+	var blank := piezas.get("Blank") as MeshInstance3D
+	if blank != null:
+		var caja := blank.get_aabb()
+		var pivote := rod.get_node(^"RodPivot") as Node3D
+		var punta_y: float = pivote.to_local(blank.to_global(caja.position + caja.size)).y
+		var tip_y: float = (rod.get_node(^"RodPivot/Tip") as Node3D).position.y
+		_check(absf(punta_y - tip_y) < 0.02,
+			"y el sedal naciendo en la punta de verdad (%.3f vs %.3f)" % [punta_y, tip_y])
+
+	var grip := piezas.get("Grip") as MeshInstance3D
+	_check(grip != null, "y la pieza que lleva el color del tier")
+	if grip == null:
+		return
+	var tier_previo := rod.tier
+	var altura := load("res://resources/rod_tiers/tier_3_altura.tres") as RodTier
+	rod.tier = altura
+	rod._apply_tier()
+	var mat := grip.get_surface_override_material(0) as StandardMaterial3D
+	_check(mat != null and mat.albedo_color.is_equal_approx(altura.accent_color),
+		"que de verdad cambia al montar otro aparejo")
+	rod.tier = tier_previo
+	rod._apply_tier()
+
+	# El carrete es la unica pieza MOVIL de la caña. Si el GLB deja de traer sus
+	# ejes de giro (o alguien los renombra al reconstruir el modelo), se queda
+	# quieto mientras el jugador spamea el clic: cero errores, y la sensacion de
+	# que el juego no le esta oyendo.
+	_check(rod._rotor != null and rod._handle != null,
+		"y el carrete con sus dos piezas moviles")
+	if rod._rotor == null or rod._handle == null:
+		return
+	var pose_rotor := rod._rotor.transform.basis
+	var pose_manivela := rod._handle.transform.basis
+	var estado_previo := rod.state
+	rod.state = FishingRod.State.FIGHT
+	rod._reeling = true
+	rod._spin_reel(0.02)
+	var giro_manivela: float = pose_manivela.get_rotation_quaternion().angle_to(
+		rod._handle.transform.basis.get_rotation_quaternion())
+	var giro_rotor: float = pose_rotor.get_rotation_quaternion().angle_to(
+		rod._rotor.transform.basis.get_rotation_quaternion())
+	_check(giro_manivela > 0.05 and giro_rotor > giro_manivela * 2.0,
+		"que gira al recoger, y el rotor mucho mas que la manivela")
+	rod._reeling = false
+	rod.state = estado_previo
+	rod._reel_angle = 0.0
+	rod._rotor.transform.basis = pose_rotor
+	rod._handle.transform.basis = pose_manivela
+
+	# El doblez: el cuerpo se CURVA y la punta se va con el. Si el rig no llegara
+	# (modelo viejo, huesos renombrados), la caña volveria a inclinarse tiesa sin
+	# decir nada, y el sedal seguiria saliendo de un punto que ya no es la punta.
+	_check(rod._skel != null and rod._huesos.size() == FishingRod.BEND_BONE_WEIGHTS.size(),
+		"y el rig que curva el cuerpo al pelear")
+	if rod._skel == null:
+		return
+	rod._aplicar_doblez(0.0)
+	var punta_recta := rod._tip.position
+	rod._aplicar_doblez(0.8)
+	var punta_curva := rod._tip.position
+	rod._aplicar_doblez(0.0)
+	_check(punta_curva.distance_to(punta_recta) > 0.05
+		and punta_curva.y < punta_recta.y and punta_curva.z < punta_recta.z,
+		"y que arrastra con el el punto donde nace el sedal")
 
 
 # =============================================================================
@@ -345,6 +837,35 @@ func _test_sfx_library() -> void:
 	_check(all_ok, "todos los sonidos generados en 16 bits a 22050 Hz")
 	_check(SfxLibrary.reel_buzz.loop_mode == AudioStreamWAV.LOOP_FORWARD
 		and SfxLibrary.reel_buzz.loop_end > 0, "el buzz es un loop cerrado")
+	# El latigazo es el primer sample HORNEADO de la caña (regla 10). Si alguien
+	# lo renombra, lo mueve o el .import se pierde, `load()` devuelve null y el
+	# lanzamiento se queda mudo sin un solo error: exactamente el fallo
+	# silencioso que este arnes existe para cazar.
+	var whip := SfxLibrary.cast_whip
+	_check(whip != null and not whip.data.is_empty(), "el latigazo esta cargado")
+	if whip != null:
+		_check(whip.get_length() > 0.2 and whip.get_length() < 0.6,
+			"el latigazo dura lo de un gesto (~0.4 s)", "%.2f s" % whip.get_length())
+		# Mono a proposito: el render es dual-mono y el player 3D lo colapsaria
+		# igual. Si vuelve estereo es que el .import se reimporto con defaults.
+		_check(not whip.stereo and whip.mix_rate == 48000,
+			"el latigazo entra mono a 48 kHz", "%d Hz" % whip.mix_rate)
+
+	# La cama de recogida sin loop se cortaria a los 9,5 s de lucha larga y
+	# nadie veria un error: el .import es quien lo fuerza (el .wav no trae
+	# chunk `smpl` que detectar), asi que se comprueba aqui.
+	var haul := SfxLibrary.haul_loop
+	_check(haul != null and not haul.data.is_empty(), "la cama de recogida esta cargada")
+	if haul != null:
+		_check(haul.loop_mode == AudioStreamWAV.LOOP_FORWARD and haul.loop_end > 0,
+			"y es un loop cerrado hacia adelante")
+		_check(not haul.stereo and haul.mix_rate == 48000 and haul.get_length() > 5.0,
+			"mono a 48 kHz y larga (no se delata al repetirse)",
+			"%.1f s" % haul.get_length())
+	_check(FishingRod.HAUL_DB < -4.0,
+		"y entra por debajo del tren de clicks, que es quien lleva la tension",
+		"%.1f dB" % FishingRod.HAUL_DB)
+
 	_check(SfxLibrary.jingles.size() == 3
 		and SfxLibrary.jingles[2].data.size() > SfxLibrary.jingles[0].data.size(),
 		"3 jingles y el epico dura mas que el comun")
@@ -459,4 +980,51 @@ func _test_fishing_hud() -> void:
 	_check(not hud._result.visible, "y se desvanece solo")
 
 	scene.queue_free()
+	await get_tree().process_frame
+
+
+## El acompañamiento del forcejeo: A tira a la izquierda, D a la derecha, el
+## pez arrastra hacia su lado, y LA CONTRA CORRECTA CENTRA LA CAÑA — la caña
+## quieta es la señal de que aguantas bien.
+func _test_lean_accompaniment() -> void:
+	_check(FishingRod.lean_target_for(FightModel.Pull.NONE, true, false, 0.5) > 0.1,
+		"A tira la caña a la izquierda")
+	_check(FishingRod.lean_target_for(FightModel.Pull.NONE, false, true, 0.5) < -0.1,
+		"D a la derecha")
+
+	var free := FishingRod.lean_target_for(FightModel.Pull.LEFT, false, false, 0.5)
+	_check(free > 0.15, "el pez sin contra arrastra la caña a su lado",
+		"%.2f" % free)
+	var countered := FishingRod.lean_target_for(FightModel.Pull.LEFT, false, true, 0.5)
+	_check(absf(countered) < 0.1, "la contra correcta centra la caña",
+		"%.2f" % countered)
+	var wrong := FishingRod.lean_target_for(FightModel.Pull.LEFT, true, false, 0.5)
+	_check(wrong > free, "contrar MAL exagera el bandazo — el error se ve gordo",
+		"%.2f vs %.2f" % [wrong, free])
+
+
+## El arrastre de camara del pez escapandose: traslacional, con tope duro, se
+## suelta solo, y JAMAS rota (la regla anti-mareo cubre tambien esto).
+func _test_camera_drag() -> void:
+	var cam := CameraFeedback.new()
+	add_child(cam)
+	await get_tree().process_frame
+	var base_rot := cam.rotation
+
+	cam.set_drag(Vector2(0.2, 0.0)) # pide 20 cm: el tope debe recortarlo
+	for _i in 30:
+		await get_tree().process_frame
+	_check(cam.position.x > 0.02, "el arrastre tira de la camara",
+		"x=%.3f" % cam.position.x)
+	_check(cam.position.length() <= 0.05, "con tope duro de 4.5 cm",
+		"%.3f" % cam.position.length())
+	_check(cam.rotation == base_rot, "y sin rotar jamas")
+
+	cam.set_drag(Vector2.ZERO)
+	for _i in 100:
+		await get_tree().process_frame
+	_check(cam.position.length() < 0.004, "y se suelta solo al soltar el pez",
+		"%.4f" % cam.position.length())
+
+	cam.queue_free()
 	await get_tree().process_frame

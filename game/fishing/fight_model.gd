@@ -26,11 +26,26 @@ extends RefCounted
 ## Filosofia DREDGE intacta: en calma y con pez pequeño sigue siendo indulgente
 ## (banda A: "pescas mirando al amigo"); el castigo real crece con el mar y con
 ## el pez, que es la tesis del juego.
+##
+## TIERS (feedback del playtest: "el sedal rompe demasiado rapido"). La ventana
+## de reaccion tras entrar en zona de rotura ya no es plana: la fija el TIER
+## del pez (SNAP_HOLD_BY_TIER) y la alarga la caña montada (RodTier). La caña
+## ademas multiplica la tension que aguanta el sedal y la velocidad del
+## carrete. Puerta BLANDA a proposito: ninguna caña prohibe ningun pez — la
+## fisica decide, el feedback la cuenta (regla 8), y todo se normaliza contra
+## el limite REAL del sedal montado: el chirrido dice "cerca de TU rotura".
 
-## Umbral de aviso: el carrete chirria (>= 1 s antes de poder romper).
+## Umbral de aviso, como fraccion del limite del sedal: el carrete chirria
+## con margen antes de poder romper, monte lo que monte la caña.
 const WARN_TENSION := 0.8
 const SNAP_TENSION := 1.0
-const SNAP_HOLD_SECONDS := 0.5
+## La ventana de reaccion: segundos de sobrecarga SOSTENIDA antes del snap,
+## por tier del pez (indice tier-1). Del playtest: 0.5 s planos para todos
+## rompian "demasiado rapido" — el que aprende con sardinas necesita margen
+## real para soltar el clic; el que pelea la legendaria ya sabe lo que hace.
+## La banda A perdona mas del doble que la C, y bajar de ~0.45 s convertiria
+## la rotura en un robo (regla 8: siempre se avisa, siempre da tiempo).
+const SNAP_HOLD_BY_TIER: Array[float] = [1.5, 1.0, 0.65, 0.45]
 
 ## Peso del mar en la formula (furia 5 ~ 0.12-0.24; furia 7-8 ~ 0.36-0.6).
 const SEA_K := 0.06
@@ -75,12 +90,18 @@ var snapped: bool = false
 var escaped: bool = false ## escupio el anzuelo (fallo por defecto de tension)
 var landed: bool = false
 
+## Lo que aporta la caña montada (RodTier). 1.0/1.0 = la caña de iniciacion.
+var line_strength: float = 1.0
+var reel_factor: float = 1.0
+## Ventana de reaccion vigente: la del tier del pez + la gracia de la caña.
+var snap_hold: float = SNAP_HOLD_BY_TIER[0]
+
 var _rng: RandomNumberGenerator
 var _phase_left: float = 0.0
 var _over_tension_time: float = 0.0
 
 
-func start(species: Dictionary, rng: RandomNumberGenerator) -> void:
+func start(species: Dictionary, rng: RandomNumberGenerator, rod: RodTier = null) -> void:
 	fish = species
 	_rng = rng
 	progress = 0.0
@@ -90,6 +111,15 @@ func start(species: Dictionary, rng: RandomNumberGenerator) -> void:
 	snapped = false
 	escaped = false
 	landed = false
+	_over_tension_time = 0.0 # una lucha nueva no hereda la sobrecarga de la anterior
+	var tier: int = FishSpecies.tier_of(species)
+	snap_hold = SNAP_HOLD_BY_TIER[clampi(tier - 1, 0, SNAP_HOLD_BY_TIER.size() - 1)]
+	line_strength = 1.0
+	reel_factor = 1.0
+	if rod != null:
+		line_strength = rod.line_strength
+		reel_factor = rod.reel_factor
+		snap_hold += rod.snap_hold_bonus
 	pull_dir = Pull.LEFT if rng.randf() < 0.5 else Pull.RIGHT
 	_phase_left = rng.randf_range(1.0, 2.2)
 
@@ -122,14 +152,14 @@ func step(delta: float, reeling: bool, counter: Pull, sea_accel_y: float) -> voi
 		# Tirar cansa al pez — es la unica forma de agotarlo.
 		stamina = maxf(stamina - TIRE_RATE * delta, 0.0)
 
-	# --- recogida ------------------------------------------------------------
+	# --- recogida (el carrete de la caña multiplica lo recogido) -------------
 	if reeling:
 		if pull_dir != Pull.NONE:
 			t += REEL_TENSION_PULLING
-			progress += REEL_RATE_PULLING * delta
+			progress += REEL_RATE_PULLING * reel_factor * delta
 		else:
 			t += REEL_TENSION_SLACK
-			progress += REEL_RATE_SLACK * delta
+			progress += REEL_RATE_SLACK * reel_factor * delta
 
 	# --- sedal flojo: el anzuelo se afloja -----------------------------------
 	if pull_dir == Pull.NONE and not reeling:
@@ -145,10 +175,10 @@ func step(delta: float, reeling: bool, counter: Pull, sea_accel_y: float) -> voi
 	tension = t
 	progress = clampf(progress, 0.0, 1.0)
 
-	# --- rotura --------------------------------------------------------------
-	if tension >= SNAP_TENSION:
+	# --- rotura: sobrecarga sostenida contra el sedal MONTADO ----------------
+	if tension >= max_tension():
 		_over_tension_time += delta
-		if _over_tension_time >= SNAP_HOLD_SECONDS:
+		if _over_tension_time >= snap_hold:
 			snapped = true
 	else:
 		_over_tension_time = 0.0
@@ -157,12 +187,19 @@ func step(delta: float, reeling: bool, counter: Pull, sea_accel_y: float) -> voi
 		landed = true
 
 
+## La tension que aguanta el sedal de la caña montada. Todo el feedback se
+## normaliza contra ESTA cifra: chirrido, color y HUD dicen "cerca de TU
+## limite", no de uno ideal que el jugador no puede conocer.
+func max_tension() -> float:
+	return SNAP_TENSION * line_strength
+
+
 func is_pulling() -> bool:
 	return pull_dir != Pull.NONE
 
 
 func is_warning() -> bool:
-	return tension >= WARN_TENSION
+	return tension >= WARN_TENSION * line_strength
 
 
 ## El aviso de que el anzuelo se esta aflojando: comba exagerada y boya a la

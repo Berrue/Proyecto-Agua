@@ -1,0 +1,75 @@
+[gd_scene load_steps=8 format=3]
+
+[ext_resource type="Script" path="res://game/props/portable.gd" id="1_portable"]
+[ext_resource type="Script" path="res://addons/ocean/physics/buoyancy_probe.gd" id="2_probe"]
+
+[sub_resource type="CapsuleShape3D" id="Shape_palo"]
+radius = 0.028
+height = 2.25
+
+[sub_resource type="StandardMaterial3D" id="Mat_palo"]
+albedo_color = Color(0.5, 0.4, 0.26, 1)
+roughness = 0.9
+
+[sub_resource type="StandardMaterial3D" id="Mat_metal"]
+albedo_color = Color(0.35, 0.37, 0.4, 1)
+metallic = 0.7
+roughness = 0.4
+
+[sub_resource type="CylinderMesh" id="Mesh_palo"]
+top_radius = 0.02
+bottom_radius = 0.024
+height = 2.2
+radial_segments = 8
+rings = 1
+
+[sub_resource type="CylinderMesh" id="Mesh_punta"]
+top_radius = 0.001
+bottom_radius = 0.012
+height = 0.12
+radial_segments = 6
+rings = 1
+
+[sub_resource type="CylinderMesh" id="Mesh_gancho"]
+top_radius = 0.009
+bottom_radius = 0.011
+height = 0.16
+radial_segments = 6
+rings = 1
+
+[node name="Bichero" type="RigidBody3D"]
+collision_layer = 1
+collision_mask = 1
+mass = 4.0
+script = ExtResource("1_portable")
+nombre = "bichero"
+manos = 2
+agarre_rotacion_deg = Vector3(-65, 0, 0)
+drag_coefficient = 0.6
+angular_drag = 0.7
+max_submersion_depth = 0.6
+slam_threshold = 7.0
+tick_divisor = 2
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+shape = SubResource("Shape_palo")
+
+[node name="Palo" type="MeshInstance3D" parent="."]
+mesh = SubResource("Mesh_palo")
+surface_material_override/0 = SubResource("Mat_palo")
+
+[node name="Punta" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.16, 0)
+mesh = SubResource("Mesh_punta")
+surface_material_override/0 = SubResource("Mat_metal")
+
+[node name="Gancho" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.643, -0.766, 0, 0.766, 0.643, 0, 1.05, 0.055)
+mesh = SubResource("Mesh_gancho")
+surface_material_override/0 = SubResource("Mat_metal")
+
+[node name="Sonda" type="Marker3D" parent="."]
+script = ExtResource("2_probe")
+volume = 0.006
+height = 0.4
+drag_area = 0.06

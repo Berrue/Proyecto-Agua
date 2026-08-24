@@ -1,0 +1,66 @@
+[gd_scene load_steps=8 format=3]
+
+[ext_resource type="Script" path="res://game/props/cubo_cebo.gd" id="1_cubo"]
+[ext_resource type="Resource" path="res://resources/cebos/cebo_comun.tres" id="2_cebo"]
+
+[sub_resource type="StandardMaterial3D" id="Mat_balde"]
+albedo_color = Color(0.28, 0.3, 0.32, 1)
+metallic = 0.4
+roughness = 0.8
+cull_mode = 2
+
+[sub_resource type="StandardMaterial3D" id="Mat_cebo"]
+albedo_color = Color(0.58, 0.5, 0.36, 1)
+roughness = 1.0
+
+[sub_resource type="CylinderMesh" id="Mesh_balde"]
+top_radius = 0.19
+bottom_radius = 0.15
+height = 0.3
+radial_segments = 10
+rings = 1
+cap_top = false
+
+[sub_resource type="CylinderMesh" id="Mesh_cebo"]
+top_radius = 0.165
+bottom_radius = 0.14
+height = 0.22
+radial_segments = 10
+rings = 1
+
+[sub_resource type="TorusMesh" id="Mesh_asa"]
+inner_radius = 0.16
+outer_radius = 0.18
+rings = 10
+ring_segments = 5
+
+[sub_resource type="SphereShape3D" id="Shape_zona"]
+radius = 0.35
+
+[node name="CuboCebo" type="Marker3D"]
+script = ExtResource("1_cubo")
+cargas = 24
+tipo = ExtResource("2_cebo")
+capacidad_visual = 24
+
+[node name="Balde" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.15, 0)
+mesh = SubResource("Mesh_balde")
+surface_material_override/0 = SubResource("Mat_balde")
+
+[node name="Contenido" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.15, 0)
+mesh = SubResource("Mesh_cebo")
+surface_material_override/0 = SubResource("Mat_cebo")
+
+[node name="Asa" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.29, 0)
+mesh = SubResource("Mesh_asa")
+surface_material_override/0 = SubResource("Mat_balde")
+
+[node name="Zona" type="Area3D" parent="."]
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Zona"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.15, 0)
+shape = SubResource("Shape_zona")

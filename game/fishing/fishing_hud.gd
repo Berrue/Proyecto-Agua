@@ -19,6 +19,11 @@ extends CanvasLayer
 ## puede pasar a ser una "ayuda de pesca" desactivable — pero primero se
 ## aprende, luego se presume.
 
+enum FontRole {
+	DISPLAY,
+	UI_BOLD,
+}
+
 var _bite_mark: Label
 var _arrow: Label
 var _action: Label
@@ -41,7 +46,7 @@ func _ready() -> void:
 	_flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_flash)
 
-	_bite_mark = _make_label("!", 150, Color(1.0, 0.85, 0.2), 16)
+	_bite_mark = _make_label("!", 150, Color(1.0, 0.85, 0.2), 16, FontRole.DISPLAY)
 	_bite_mark.set_anchors_preset(Control.PRESET_CENTER)
 	_bite_mark.position += Vector2(-30, -220)
 	add_child(_bite_mark)
@@ -53,11 +58,11 @@ func _ready() -> void:
 	_fight_box.alignment = BoxContainer.ALIGNMENT_CENTER
 	add_child(_fight_box)
 
-	_arrow = _make_label("", 96, Color.WHITE, 12)
+	_arrow = _make_label("", 96, Color.WHITE, 12, FontRole.UI_BOLD)
 	_arrow.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_fight_box.add_child(_arrow)
 
-	_action = _make_label("", 30, Color.WHITE, 8)
+	_action = _make_label("", 30, Color.WHITE, 8, FontRole.DISPLAY)
 	_action.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_fight_box.add_child(_action)
 
@@ -74,7 +79,7 @@ func _ready() -> void:
 	_bar_fill.size = Vector2(0, 4)
 	_bar_bg.add_child(_bar_fill)
 
-	_result = _make_label("", 44, Color.WHITE, 10)
+	_result = _make_label("", 44, Color.WHITE, 10, FontRole.DISPLAY)
 	_result.set_anchors_preset(Control.PRESET_CENTER)
 	_result.position += Vector2(-300, -80)
 	_result.custom_minimum_size = Vector2(600, 0)
@@ -84,10 +89,12 @@ func _ready() -> void:
 	hide_all()
 
 
-func _make_label(text: String, size: int, color: Color, outline: int) -> Label:
+func _make_label(text: String, size: int, color: Color, outline: int, role: int) -> Label:
 	var l := Label.new()
 	l.text = text
 	var ls := LabelSettings.new()
+	ls.font = (GameTypography.display_hud() if role == FontRole.DISPLAY
+		else GameTypography.ui_bold())
 	ls.font_size = size
 	ls.font_color = color
 	ls.outline_size = outline

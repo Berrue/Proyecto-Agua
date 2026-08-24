@@ -1,0 +1,65 @@
+[gd_scene load_steps=8 format=3]
+
+[ext_resource type="Script" path="res://game/props/portable.gd" id="1_portable"]
+[ext_resource type="Script" path="res://addons/ocean/physics/buoyancy_probe.gd" id="2_probe"]
+
+[sub_resource type="BoxShape3D" id="Shape_radio"]
+size = Vector3(0.1, 0.2, 0.06)
+
+[sub_resource type="StandardMaterial3D" id="Mat_carcasa"]
+albedo_color = Color(0.16, 0.2, 0.18, 1)
+roughness = 0.85
+
+[sub_resource type="StandardMaterial3D" id="Mat_rejilla"]
+albedo_color = Color(0.08, 0.09, 0.09, 1)
+roughness = 1.0
+
+[sub_resource type="BoxMesh" id="Mesh_cuerpo"]
+size = Vector3(0.1, 0.2, 0.06)
+
+[sub_resource type="BoxMesh" id="Mesh_rejilla"]
+size = Vector3(0.07, 0.08, 0.012)
+
+[sub_resource type="CylinderMesh" id="Mesh_antena"]
+top_radius = 0.004
+bottom_radius = 0.006
+height = 0.24
+radial_segments = 6
+rings = 1
+
+[node name="Radio" type="RigidBody3D"]
+collision_layer = 1
+collision_mask = 1
+mass = 1.5
+script = ExtResource("1_portable")
+nombre = "radio portátil"
+en_cinturon = true
+drag_coefficient = 0.7
+angular_drag = 0.6
+max_submersion_depth = 0.5
+slam_threshold = 6.0
+tick_divisor = 2
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+shape = SubResource("Shape_radio")
+
+[node name="Cuerpo" type="MeshInstance3D" parent="."]
+mesh = SubResource("Mesh_cuerpo")
+surface_material_override/0 = SubResource("Mat_carcasa")
+
+[node name="Rejilla" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.03, 0.031)
+mesh = SubResource("Mesh_rejilla")
+surface_material_override/0 = SubResource("Mat_rejilla")
+
+[node name="Antena" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.033, 0.21, 0)
+mesh = SubResource("Mesh_antena")
+surface_material_override/0 = SubResource("Mat_rejilla")
+
+[node name="Sonda" type="Marker3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.03, 0)
+script = ExtResource("2_probe")
+volume = 0.002
+height = 0.2
+drag_area = 0.03

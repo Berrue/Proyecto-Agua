@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="VozBalance" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://game/audio/voz_balance.gd" id="1_voz"]
+
+[resource]
+script = ExtResource("1_voz")
+radio_calma = 40.0
+radio_temporal = 9.0
+hz_calma = 20500.0
+hz_temporal = 1400.0
+alivio_interior = 0.7

@@ -5,8 +5,11 @@ extends RefCounted
 ##
 ## [b]Este archivo implementa EXACTAMENTE la misma matematica que[/b]
 ## [code]addons/ocean/shaders/ocean_waves.gdshaderinc[/code]. Si tocas una
-## formula aqui, tocala tambien alli. [code]tests/test_wave_parity.gd[/code] lo
-## verifica y hace fallar el build.
+## formula aqui, tocala tambien alli, y mira las esferas de
+## [code]addons/ocean/debug/parity_markers.gd[/code] en el editor: si se
+## despegan del agua, hay deriva CPU/GPU. El lado CPU (determinismo, inversion)
+## lo cubre [code]tests/f1_tests.gd[/code] en headless; el test GPU automatico
+## sigue pendiente porque headless no tiene RenderingDevice.
 ##
 ## Es una funcion PURA de (posicion, tiempo, semilla, estado del mar): dos
 ## maquinas con la misma semilla y el mismo reloj calculan el mismo mar sin
@@ -92,10 +95,36 @@ func generate(rng_seed: int, wave_count: int = 12, wind_dir_deg: float = 0.0) ->
 			_domega[i] = _omega[i] * 0.5
 
 
+## Longitudes de onda entre las que la banda larga puede ADELANTARSE al viento.
+## Por debajo de la corta, nada se adelanta (el rizado lo hace el viento de
+## AHORA, y un rizado que llega antes que su viento es imposible y se ve raro);
+## por encima de la larga, el adelanto es pleno. El swell real de un temporal
+## lejano son ondas de 200-400 m, y estas dos cifras las encierran.
+const SWELL_BANDA_CORTA := 150.0
+const SWELL_BANDA_LARGA := 250.0
+
+
 ## Reparte la energia del mar entre las olas ya congeladas.
 ## [param hs] altura significativa objetivo en metros (escala Douglas).
 ## [param choppiness] 0..0.85. Cuanto mas alto, mas puntiagudas las crestas.
-func set_sea_state(hs: float, choppiness: float) -> void:
+## [param hs_swell] Hs de la MAR DE FONDO, que puede venir de una tormenta que
+## todavia no ha llegado (docs/CLIMA.md §3.3: «el mar de fondo llega primero»).
+## Solo alimenta las olas LARGAS, y solo si supera a [param hs]. Por defecto
+## -1 = «la misma que hs», o sea el comportamiento de siempre, bit a bit.
+## [param hs_origen] Hs de la TORMENTA que genera ese swell, para su periodo.
+## Es la definicion fisica de mar de fondo: energia moderada (capada por quien
+## llama) pero el PERIODO del temporal lejano — Tp ~ 4·sqrt(Hs_tormenta), olas
+## de cientos de metros. Sin esto el precursor se normaliza a su Hs capado con
+## periodo corto (~50 m de longitud), la mascara de bandas largas lo filtra
+## entero, y el «anuncio» es exactamente cero — medido, no teorico.
+##
+## [b]Por que solo las largas:[/b] la ondulacion larga viaja mas rapido que el
+## grupo que la genero y recorre miles de km perdiendo poca energia; el rizado
+## corto se disipa en decenas. Por eso un mar de fondo anuncia tormentas que
+## todavia estan a horas, y por eso adelantarlo ENTERO —rizado incluido— seria
+## simplemente traer la tormenta antes, no telegrafiarla.
+func set_sea_state(hs: float, choppiness: float, hs_swell: float = -1.0,
+		hs_origen: float = -1.0) -> void:
 	if count == 0:
 		return
 
@@ -112,33 +141,32 @@ func set_sea_state(hs: float, choppiness: float) -> void:
 	var wp: float = TAU / peak_period
 	var gamma := 3.3
 
-	var weights := PackedFloat32Array()
-	weights.resize(count)
-	var sum_sq: float = 0.0
-	for i in count:
-		var w: float = _omega[i]
-		var sigma: float = 0.07 if w <= wp else 0.09
-		var r: float = exp(-pow(w - wp, 2.0) / (2.0 * sigma * sigma * wp * wp))
-		var s_val: float = pow(w, -5.0) * exp(-1.25 * pow(wp / w, 4.0)) * pow(gamma, r)
-		# a = sqrt(2 * S(w) * dw); el factor 2 se absorbe en la normalizacion.
-		var weight: float = sqrt(maxf(s_val * _domega[i], 0.0))
-		weights[i] = weight
-		sum_sq += weight * weight
+	var base := _amplitudes_jonswap(hs, wp, gamma)
 
-	# Hs = 4*sqrt(m0) y m0 = suma(a^2)/2  =>  suma(a^2) = (Hs / 2.8284)^2
+	# La MAR DE FONDO, si viene una tormenta. Se toma el maximo por modo y no la
+	# suma: sumar dos espectros normalizados a Hs distintos da un Hs total que
+	# no es ninguno de los dos, y el dial dejaria de significar lo que dice.
+	if hs_swell > hs:
+		# El periodo sale del ORIGEN (la tormenta), no de la energia capada.
+		var origen: float = maxf(hs_origen, hs_swell)
+		var wp_swell: float = TAU / (4.0 * sqrt(maxf(origen, 0.04)))
+		var swell := _amplitudes_jonswap(hs_swell, wp_swell, gamma)
+		for i in count:
+			var largo: float = smoothstep(SWELL_BANDA_CORTA, SWELL_BANDA_LARGA, _wavelength[i])
+			base[i] = maxf(base[i], swell[i] * largo)
+
 	var hs_to_amp := 4.0 / sqrt(2.0)
-	var target_sum_sq: float = pow(hs / hs_to_amp, 2.0)
-	var scale: float = 0.0 if sum_sq <= 0.0 else sqrt(target_sum_sq / sum_sq)
-
 	var actual_sum_sq: float = 0.0
 	for i in count:
 		# Limite de rotura por ola: una ola no puede ser mas alta que ~L/7. Al
 		# saturar, el mar deja de crecer en vez de explotar. Es fisicamente
 		# correcto y ademas impide que la fisica se vuelva loca en furia alta.
-		var a: float = minf(weights[i] * scale, _wavelength[i] * WAVE_BREAK_RATIO)
+		var a: float = minf(base[i], _wavelength[i] * WAVE_BREAK_RATIO)
 		_amp[i] = a
 		actual_sum_sq += a * a
 
+	# Sale del reparto REAL, asi que con mar de fondo adelantada el HUD marca el
+	# Hs que el barco siente de verdad, no el que la furia prometeria.
 	measured_hs = hs_to_amp * sqrt(actual_sum_sq)
 
 	# Q uniforme tal que suma(Q * a * k) == choppiness. Repartirlo asi (en vez de
@@ -295,3 +323,29 @@ func pack_b() -> PackedVector4Array:
 	for i in count:
 		out[i] = Vector4(_omega[i], _phase[i], _q, 0.0)
 	return out
+
+
+## Amplitudes JONSWAP normalizadas para un Hs dado, sin aplicar el limite de
+## rotura. Extraido para poder evaluar DOS estados de mar (el de ahora y el de
+## fondo) con exactamente la misma matematica: si divergieran, la mar de fondo
+## seria un espectro distinto y no «el mismo mar mas grande».
+func _amplitudes_jonswap(hs: float, wp: float, gamma: float) -> PackedFloat32Array:
+	var pesos := PackedFloat32Array()
+	pesos.resize(count)
+	var sum_sq: float = 0.0
+	for i in count:
+		var w: float = _omega[i]
+		var sigma: float = 0.07 if w <= wp else 0.09
+		var r: float = exp(-pow(w - wp, 2.0) / (2.0 * sigma * sigma * wp * wp))
+		var s_val: float = pow(w, -5.0) * exp(-1.25 * pow(wp / w, 4.0)) * pow(gamma, r)
+		# a = sqrt(2 * S(w) * dw); el factor 2 se absorbe en la normalizacion.
+		var peso: float = sqrt(maxf(s_val * _domega[i], 0.0))
+		pesos[i] = peso
+		sum_sq += peso * peso
+
+	# Hs = 4*sqrt(m0) y m0 = suma(a^2)/2  =>  suma(a^2) = (Hs / 2.8284)^2
+	var hs_to_amp := 4.0 / sqrt(2.0)
+	var escala: float = 0.0 if sum_sq <= 0.0 else sqrt(pow(hs / hs_to_amp, 2.0) / sum_sq)
+	for i in count:
+		pesos[i] = pesos[i] * escala
+	return pesos

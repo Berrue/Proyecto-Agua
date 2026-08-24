@@ -1,0 +1,54 @@
+[gd_scene load_steps=7 format=3]
+
+[ext_resource type="Script" path="res://game/props/portable.gd" id="1_portable"]
+[ext_resource type="Script" path="res://addons/ocean/physics/buoyancy_probe.gd" id="2_probe"]
+
+[sub_resource type="BoxShape3D" id="Shape_caja"]
+size = Vector3(0.55, 0.3, 0.28)
+
+[sub_resource type="StandardMaterial3D" id="Mat_caja"]
+albedo_color = Color(0.5, 0.16, 0.1, 1)
+roughness = 0.8
+
+[sub_resource type="StandardMaterial3D" id="Mat_asa"]
+albedo_color = Color(0.15, 0.15, 0.16, 1)
+metallic = 0.4
+roughness = 0.6
+
+[sub_resource type="BoxMesh" id="Mesh_caja"]
+size = Vector3(0.55, 0.26, 0.28)
+
+[sub_resource type="BoxMesh" id="Mesh_asa"]
+size = Vector3(0.2, 0.03, 0.04)
+
+[node name="CajaHerramientas" type="RigidBody3D"]
+collision_layer = 1
+collision_mask = 1
+mass = 14.0
+script = ExtResource("1_portable")
+nombre = "caja de herramientas"
+manos = 2
+drag_coefficient = 0.7
+angular_drag = 0.6
+max_submersion_depth = 0.8
+slam_threshold = 6.0
+tick_divisor = 2
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+shape = SubResource("Shape_caja")
+
+[node name="Cuerpo" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.02, 0)
+mesh = SubResource("Mesh_caja")
+surface_material_override/0 = SubResource("Mat_caja")
+
+[node name="Asa" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.135, 0)
+mesh = SubResource("Mesh_asa")
+surface_material_override/0 = SubResource("Mat_asa")
+
+[node name="Sonda" type="Marker3D" parent="."]
+script = ExtResource("2_probe")
+volume = 0.015
+height = 0.3
+drag_area = 0.15

@@ -1,33 +1,43 @@
-[gd_scene load_steps=5 format=3]
+[gd_scene format=3 uid="uid://c7feypndmhy60"]
 
-[ext_resource type="Script" path="res://game/player/player.gd" id="1_player"]
-[ext_resource type="PackedScene" path="res://game/player/pescador.glb" id="2_pescador"]
+[ext_resource type="Script" uid="uid://dvoqudimp4gx5" path="res://game/player/player.gd" id="1_player"]
+[ext_resource type="PackedScene" uid="uid://0ebfhxsr4h00" path="res://game/player/pescador_smooth.glb" id="2_pescador"]
 [ext_resource type="PackedScene" path="res://game/fishing/fishing_rod.tscn" id="3_rod"]
-[ext_resource type="Script" path="res://game/player/camera_feedback.gd" id="4_camfx"]
+[ext_resource type="Script" uid="uid://c327qj7gvshju" path="res://game/player/camera_feedback.gd" id="4_camfx"]
+[ext_resource type="Resource" path="res://resources/rod_tiers/tier_1_iniciacion.tres" id="5_rodtier"]
+[ext_resource type="Script" path="res://game/player/portador.gd" id="5_portador"]
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_body"]
 radius = 0.35
 height = 1.8
 
-[node name="Player" type="CharacterBody3D"]
+[node name="Player" type="CharacterBody3D" unique_id=774022437]
 collision_layer = 2
-collision_mask = 1
 script = ExtResource("1_player")
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1365188048]
 shape = SubResource("CapsuleShape3D_body")
 
-[node name="Pescador" parent="." instance=ExtResource("2_pescador")]
+[node name="Pescador" parent="." unique_id=1180339323 instance=ExtResource("2_pescador")]
 transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, -0.9, 0)
 
-[node name="Camera3D" type="Camera3D" parent="."]
+[node name="Cinto1" type="Marker3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.24, 0, 0.14)
+editor_description = "Hueco de cinturón (babor). Cuelga del CUERPO y no de la cámara: lo que llevás a la cadera no cabecea con la mirada. Lo indexa NetPorteo.SOCKETS."
+
+[node name="Cinto2" type="Marker3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.24, 0, 0.14)
+editor_description = "Hueco de cinturón (estribor)."
+
+[node name="Camera3D" type="Camera3D" parent="." unique_id=1294398106]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.65, 0)
 current = true
 fov = 78.0
-near = 0.05
-far = 4000.0
 script = ExtResource("4_camfx")
-effects_enabled = true
 
-[node name="FishingRod" parent="Camera3D" instance=ExtResource("3_rod")]
+[node name="FishingRod" parent="Camera3D" unique_id=1784588838 instance=ExtResource("3_rod")]
 player_path = NodePath("../..")
+tier = ExtResource("5_rodtier")
+
+[node name="Portador" type="Node3D" parent="Camera3D"]
+script = ExtResource("5_portador")

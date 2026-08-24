@@ -1,0 +1,12 @@
+[gd_resource type="Resource" script_class="RodTier" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://game/fishing/rod_tier.gd" id="1_tier"]
+
+[resource]
+script = ExtResource("1_tier")
+tier_name = "Caña de faena"
+line_strength = 1.3
+reel_factor = 1.2
+snap_hold_bonus = 0.25
+cast_factor = 1.15
+accent_color = Color(0.16, 0.34, 0.27, 1)

@@ -1,10 +1,9 @@
-[gd_scene load_steps=17 format=3]
+[gd_scene load_steps=26 format=3]
 
 [ext_resource type="Script" path="res://addons/ocean/ocean_surface.gd" id="1_surface"]
 [ext_resource type="Shader" path="res://addons/ocean/shaders/ocean_surface.gdshader" id="2_shader"]
 [ext_resource type="Script" path="res://addons/ocean/debug/parity_markers.gd" id="3_parity"]
 [ext_resource type="PackedScene" path="res://game/boat/fishing_boat.tscn" id="4_boat"]
-[ext_resource type="PackedScene" path="res://game/boat/barrel.tscn" id="5_barrel"]
 [ext_resource type="PackedScene" path="res://game/player/player.tscn" id="6_player"]
 [ext_resource type="PackedScene" path="res://addons/ocean/debug/ocean_debug_hud.tscn" id="7_hud"]
 [ext_resource type="Resource" path="res://resources/tsunami_tiers/tier_1_muro.tres" id="8_t1"]
@@ -13,6 +12,17 @@
 
 [ext_resource type="Script" path="res://game/world/day_night_cycle.gd" id="11_cycle"]
 [ext_resource type="Resource" path="res://resources/day_night/profile_default.tres" id="12_dnprofile"]
+[ext_resource type="Script" path="res://game/world/rain_particles.gd" id="90_rain"]
+[ext_resource type="PackedScene" path="res://game/props/farol.tscn" id="91_farol"]
+[ext_resource type="PackedScene" path="res://game/props/radio.tscn" id="92_radio"]
+[ext_resource type="PackedScene" path="res://game/props/llave_motor.tscn" id="93_llave"]
+[ext_resource type="PackedScene" path="res://game/props/caja_herramientas.tscn" id="94_caja"]
+[ext_resource type="PackedScene" path="res://game/props/bichero.tscn" id="95_bichero"]
+[ext_resource type="Script" path="res://game/world/rain_curtain.gd" id="91_curtain"]
+[ext_resource type="Script" path="res://game/world/rain_splashes.gd" id="92_splash"]
+[ext_resource type="Script" path="res://game/world/lightning_director.gd" id="93_light"]
+[ext_resource type="Script" path="res://game/ui/aviso_agua.gd" id="95_aviso"]
+[ext_resource type="Shader" path="res://game/world/sky.gdshader" id="94_sky"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_ocean"]
 render_priority = 0
@@ -35,17 +45,12 @@ shader_parameter/foam_break_up = 0.9
 shader_parameter/wave_count = 12
 shader_parameter/ocean_time = 0.0
 
-[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_sky"]
-sky_top_color = Color(0.235, 0.318, 0.4, 1)
-sky_horizon_color = Color(0.545, 0.596, 0.62, 1)
-sky_curve = 0.15
-ground_bottom_color = Color(0.157, 0.196, 0.239, 1)
-ground_horizon_color = Color(0.545, 0.596, 0.62, 1)
-sun_angle_max = 24.0
-sun_curve = 0.08
+[sub_resource type="ShaderMaterial" id="SkyMaterial_main"]
+shader = ExtResource("94_sky")
 
 [sub_resource type="Sky" id="Sky_main"]
-sky_material = SubResource("ProceduralSkyMaterial_sky")
+sky_material = SubResource("SkyMaterial_main")
+process_mode = 3
 
 [sub_resource type="Environment" id="Environment_main"]
 background_mode = 2
@@ -76,6 +81,7 @@ shadow_enabled = true
 directional_shadow_max_distance = 180.0
 
 [node name="OceanSurface" type="MeshInstance3D" parent="."]
+layers = 2
 material_override = SubResource("ShaderMaterial_ocean")
 script = ExtResource("1_surface")
 size = 512.0
@@ -95,25 +101,20 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0)
 [node name="Player" parent="." instance=ExtResource("6_player")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.2, -2)
 
-[node name="Cargo" type="Node3D" parent="."]
+[node name="Farol" parent="." instance=ExtResource("91_farol")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.55, 1.2, 2.0)
 
-[node name="Barrel1" parent="Cargo" instance=ExtResource("5_barrel")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.2, 1.5, 0.5)
+[node name="Radio" parent="." instance=ExtResource("92_radio")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.45, 1.72, 2.73)
 
-[node name="Barrel2" parent="Cargo" instance=ExtResource("5_barrel")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.3, 1.5, 0.5)
+[node name="LlaveMotor" parent="." instance=ExtResource("93_llave")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.42, 1.68, 2.73)
 
-[node name="Barrel3" parent="Cargo" instance=ExtResource("5_barrel")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.6, 1.5, 0.5)
+[node name="CajaHerramientas" parent="." instance=ExtResource("94_caja")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.5, 1.15, -0.5)
 
-[node name="Barrel4" parent="Cargo" instance=ExtResource("5_barrel")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.2, 1.5, 1.6)
-
-[node name="Barrel5" parent="Cargo" instance=ExtResource("5_barrel")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.3, 1.5, 1.6)
-
-[node name="Barrel6" parent="Cargo" instance=ExtResource("5_barrel")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.6, 1.5, 1.6)
+[node name="Bichero" parent="." instance=ExtResource("95_bichero")]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 1.75, 1.0, -0.6)
 
 
 [node name="Moon" type="DirectionalLight3D" parent="."]
@@ -138,3 +139,28 @@ default_lead_seconds = 40.0
 tsunami_from_direction_deg = 90.0
 day_night_path = NodePath("../DayNightCycle")
 rod_path = NodePath("../Player/Camera3D/FishingRod")
+lightning_path = NodePath("../LightningDirector")
+
+[node name="RainParticles" type="GPUParticles3D" parent="."]
+script = ExtResource("90_rain")
+
+[node name="RainCurtain" type="Node3D" parent="."]
+script = ExtResource("91_curtain")
+
+[node name="RainSplashes" type="GPUParticles3D" parent="."]
+script = ExtResource("92_splash")
+
+[node name="LightningLight" type="DirectionalLight3D" parent="."]
+sky_mode = 1
+transform = Transform3D(0.866025, -0.35, 0.35, 0, 0.707107, 0.707107, -0.5, -0.612372, 0.612372, 0, 80, 0)
+light_color = Color(0.898, 0.925, 1, 1)
+light_energy = 0.0
+shadow_enabled = false
+
+[node name="LightningDirector" type="Node" parent="."]
+script = ExtResource("93_light")
+flash_light_path = NodePath("../LightningLight")
+environment_path = NodePath("../WorldEnvironment")
+
+[node name="AvisoAgua" type="CanvasLayer" parent="."]
+script = ExtResource("95_aviso")

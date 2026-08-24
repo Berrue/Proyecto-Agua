@@ -21,6 +21,10 @@ extends Camera3D
 @export var effects_enabled: bool = true
 
 var _trauma: float = 0.0
+## Arrastre sostenido: el pez llevandose sedal TIRA de ti. Traslacional puro
+## (jamas rotacion), con muelle para que se sienta como tiron y no como offset.
+var _drag := Vector2.ZERO
+var _drag_target := Vector2.ZERO
 var _base_fov: float = 78.0
 var _base_pos := Vector3.ZERO
 var _noise := FastNoiseLite.new()
@@ -49,6 +53,14 @@ func _process(delta: float) -> void:
 			_noise.get_noise_2d(_noise_t, 0.0),
 			_noise.get_noise_2d(0.0, _noise_t),
 			0.0) * amp
+
+	# El arrastre persigue su objetivo con suavizado asimetrico: entra rapido
+	# (el tiron se siente) y suelta mas lento (te recompones, no rebotas).
+	var chase: float = 9.0 if _drag_target.length() > _drag.length() else 5.0
+	_drag = _drag.lerp(_drag_target if effects_enabled else Vector2.ZERO,
+		clampf(chase * delta, 0.0, 1.0))
+	offset += Vector3(_drag.x, _drag.y, 0.0)
+
 	position = _base_pos + offset
 
 	if _vignette != null:
@@ -82,6 +94,13 @@ func kick_fov(delta_deg: float, in_time: float, hold: float, out_time: float) ->
 		_fov_tween.tween_interval(hold)
 	_fov_tween.tween_property(self, "fov", _base_fov, out_time) \
 		.set_ease(Tween.EASE_IN_OUT).set_trans(Tween.TRANS_CUBIC)
+
+
+## Arrastre sostenido hacia un lado (el pez corriendo con el sedal). Tope duro
+## de 4.5 cm: es un TIRON que se siente, no un desplazamiento que desorienta.
+## Llamar cada frame; Vector2.ZERO lo libera.
+func set_drag(target: Vector2) -> void:
+	_drag_target = target.limit_length(0.045)
 
 
 ## Tension actual de la caña (0-1): alimenta la viñeta. Llamar cada frame desde

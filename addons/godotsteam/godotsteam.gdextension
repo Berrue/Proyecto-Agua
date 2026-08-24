@@ -1,0 +1,20 @@
+; ⚠️ RECORTADO A WIN64 — no es el manifiesto original.
+;
+; El zip de la release trae 104 MiB de binarios para siete plataformas. En git
+; eso pesa para siempre (el historial no olvida) y hoy no hay forma de PROBAR
+; ninguna salvo Windows: el toolchain entero del repo es Windows (Godot en
+; C:\Godot\4.7.2, los tools/build_*.py con Blender). Asi que entra solo win64.
+;
+; Volver a cualquier otra plataforma es descomprimir su carpeta del zip y
+; devolver su linea aqui. Origen y SHA-256 exactos en THIRD_PARTY.md.
+
+[configuration]
+entry_symbol = "godotsteam_init"
+compatibility_minimum = "4.4"
+
+[libraries]
+windows.debug.x86_64 = "res://addons/godotsteam/win64/libgodotsteam.windows.template_debug.x86_64.dll"
+windows.release.x86_64 = "res://addons/godotsteam/win64/libgodotsteam.windows.template_release.x86_64.dll"
+
+[dependencies]
+windows.x86_64 = { "res://addons/godotsteam/win64/steam_api64.dll": "" }

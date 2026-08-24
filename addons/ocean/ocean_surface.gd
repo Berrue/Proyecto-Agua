@@ -48,8 +48,8 @@ func _process(_delta: float) -> void:
 
 	var mat := _shader_material()
 	if mat != null:
-		# El tiempo si va cada frame: es un solo float.
-		mat.set_shader_parameter(&"ocean_time", Ocean.sim_time)
+		# Tiempo y clima si van cada frame: son un puñado de floats.
+		Ocean.apply_frame_to_material(mat)
 
 	if not follow_camera:
 		return

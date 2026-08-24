@@ -2,33 +2,53 @@
 
 [ext_resource type="Script" uid="uid://bo2tind5fxdc2" path="res://addons/ocean/physics/floating_body.gd" id="1_body"]
 [ext_resource type="Script" uid="uid://b4fmaug3gmm18" path="res://addons/ocean/physics/buoyancy_probe.gd" id="2_probe"]
+[ext_resource type="PackedScene" uid="uid://cww8p38dxd52j" path="res://game/boat/models/modular_fishing_boat.glb" id="3_visual"]
+[ext_resource type="PackedScene" path="res://game/boat/bodega.tscn" id="4_bodega"]
+[ext_resource type="PackedScene" path="res://game/props/gancho_farol.tscn" id="5_gancho"]
+[ext_resource type="PackedScene" path="res://game/props/soporte_cania.tscn" id="6_soporte"]
+[ext_resource type="PackedScene" path="res://game/boat/equipment/manual_bilge_pump.tscn" id="7_bomba"]
+[ext_resource type="PackedScene" path="res://game/props/cubo_cebo.tscn" id="7_cubo"]
+[ext_resource type="Script" path="res://game/boat/agua_embarcada.gd" id="8_agua"]
+[ext_resource type="Resource" path="res://resources/agua/agua_embarcada.tres" id="9_agua_balance"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_hull"]
-size = Vector3(4.5, 1.6, 12)
+size = Vector3(5.4, 1.6, 9.75)
 
-[sub_resource type="BoxShape3D" id="BoxShape3D_rail_side"]
-size = Vector3(0.24, 0.95, 12)
+[sub_resource type="BoxShape3D" id="BoxShape3D_rail_mid"]
+size = Vector3(0.24, 0.95, 9.1)
 
-[sub_resource type="BoxShape3D" id="BoxShape3D_rail_end"]
-size = Vector3(4.5, 0.95, 0.24)
+[sub_resource type="ConvexPolygonShape3D" id="ConvexPolygonShape3D_bow"]
+points = PackedVector3Array(-2.43, 0.8, -3.25, 2.43, 0.8, -3.25, -0.12, 1.05, -6.39, 0.12, 1.05, -6.39, -1.46, -0.75, -3.25, 1.46, -0.75, -3.25, -0.05, -0.25, -6.39, 0.05, -0.25, -6.39)
 
-[sub_resource type="BoxShape3D" id="BoxShape3D_house"]
-size = Vector3(2.6, 2, 3)
+[sub_resource type="BoxShape3D" id="BoxShape3D_rail_forward"]
+size = Vector3(0.24, 0.95, 3.46)
 
-[sub_resource type="BoxMesh" id="BoxMesh_hull"]
-size = Vector3(4.5, 1.6, 12)
+[sub_resource type="BoxShape3D" id="BoxShape3D_rail_bow"]
+size = Vector3(0.3, 0.95, 0.24)
 
-[sub_resource type="StandardMaterial3D" id="Mat_hull"]
-albedo_color = Color(0.784, 0.286, 0.204, 1)
+[sub_resource type="BoxShape3D" id="BoxShape3D_rail_stern"]
+size = Vector3(4.74, 0.95, 0.24)
 
-[sub_resource type="BoxMesh" id="BoxMesh_rail_side"]
-size = Vector3(0.24, 0.95, 12)
+[sub_resource type="BoxShape3D" id="BoxShape3D_cabin_front"]
+size = Vector3(2.1, 2.16, 0.14)
 
-[sub_resource type="BoxMesh" id="BoxMesh_rail_end"]
-size = Vector3(4.5, 0.95, 0.24)
+[sub_resource type="BoxShape3D" id="BoxShape3D_cabin_side"]
+size = Vector3(0.14, 2.16, 2.35)
 
-[sub_resource type="BoxMesh" id="BoxMesh_house"]
-size = Vector3(2.6, 2, 3)
+[sub_resource type="BoxShape3D" id="BoxShape3D_cabin_rear_side"]
+size = Vector3(0.55, 2.16, 0.14)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_cabin_header"]
+size = Vector3(1, 0.16, 0.14)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_cabin_roof"]
+size = Vector3(2.42, 0.18, 2.65)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_helm_console"]
+size = Vector3(1.72, 0.76, 0.58)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_pump_port"]
+size = Vector3(0.88, 1.25, 0.67)
 
 [node name="FishingBoat" type="RigidBody3D" unique_id=690032475]
 mass = 4000.0
@@ -38,108 +58,239 @@ continuous_cd = true
 script = ExtResource("1_body")
 drag_coefficient = 0.9
 angular_drag = 1.6
-max_submersion_depth = 2.5
 slam_threshold = 5.0
+brazo_adrizante = 3.5
 
 [node name="HullShape" type="CollisionShape3D" parent="." unique_id=1336168608]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1.625)
 shape = SubResource("BoxShape3D_hull")
 
 [node name="RailPort" type="CollisionShape3D" parent="." unique_id=317367000]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.13, 1.275, 0)
-shape = SubResource("BoxShape3D_rail_side")
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.58, 1.275, 1.3)
+shape = SubResource("BoxShape3D_rail_mid")
 
 [node name="RailStarboard" type="CollisionShape3D" parent="." unique_id=1293033185]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.13, 1.275, 0)
-shape = SubResource("BoxShape3D_rail_side")
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.58, 1.275, 1.3)
+shape = SubResource("BoxShape3D_rail_mid")
+
+[node name="HullBowShape" type="CollisionShape3D" parent="." unique_id=1737439521]
+shape = SubResource("ConvexPolygonShape3D_bow")
+
+[node name="RailBowPort" type="CollisionShape3D" parent="." unique_id=2097836045]
+transform = Transform3D(0.79849815, 0, -0.60199726, 0, 1, 0, 0.60199726, 0, 0.79849815, -1.391, 1.275, -4.632)
+shape = SubResource("BoxShape3D_rail_forward")
+
+[node name="RailBowStarboard" type="CollisionShape3D" parent="." unique_id=2074720541]
+transform = Transform3D(0.79849815, 0, 0.60199726, 0, 1, 0, -0.60199726, 0, 0.79849815, 1.391, 1.275, -4.632)
+shape = SubResource("BoxShape3D_rail_forward")
 
 [node name="RailBow" type="CollisionShape3D" parent="." unique_id=792444850]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.275, -5.88)
-shape = SubResource("BoxShape3D_rail_end")
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.35, -6.2)
+shape = SubResource("BoxShape3D_rail_bow")
 
 [node name="RailStern" type="CollisionShape3D" parent="." unique_id=168249668]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.275, 5.88)
-shape = SubResource("BoxShape3D_rail_end")
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.275, 6.4)
+shape = SubResource("BoxShape3D_rail_stern")
 
-[node name="HouseShape" type="CollisionShape3D" parent="." unique_id=1730632571]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.8, 4)
-shape = SubResource("BoxShape3D_house")
+[node name="CabinFrontShape" type="CollisionShape3D" parent="." unique_id=380440313]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.9, 2.3)
+shape = SubResource("BoxShape3D_cabin_front")
 
-[node name="Hull" type="MeshInstance3D" parent="." unique_id=1095698105]
-mesh = SubResource("BoxMesh_hull")
-surface_material_override/0 = SubResource("Mat_hull")
+[node name="CabinPortShape" type="CollisionShape3D" parent="." unique_id=1776868156]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.05, 1.9, 3.475)
+shape = SubResource("BoxShape3D_cabin_side")
 
-[node name="RailPortMesh" type="MeshInstance3D" parent="." unique_id=947467181]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.13, 1.275, 0)
-mesh = SubResource("BoxMesh_rail_side")
+[node name="CabinStarboardShape" type="CollisionShape3D" parent="." unique_id=733823015]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.05, 1.9, 3.475)
+shape = SubResource("BoxShape3D_cabin_side")
 
-[node name="RailStarboardMesh" type="MeshInstance3D" parent="." unique_id=1843008956]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.13, 1.275, 0)
-mesh = SubResource("BoxMesh_rail_side")
+[node name="CabinRearPortShape" type="CollisionShape3D" parent="." unique_id=232576532]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.775, 1.9, 4.65)
+shape = SubResource("BoxShape3D_cabin_rear_side")
 
-[node name="RailBowMesh" type="MeshInstance3D" parent="." unique_id=1176599542]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.275, -5.88)
-mesh = SubResource("BoxMesh_rail_end")
+[node name="CabinRearStarboardShape" type="CollisionShape3D" parent="." unique_id=1648312525]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.775, 1.9, 4.65)
+shape = SubResource("BoxShape3D_cabin_rear_side")
 
-[node name="RailSternMesh" type="MeshInstance3D" parent="." unique_id=967899150]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.275, 5.88)
-mesh = SubResource("BoxMesh_rail_end")
+[node name="CabinRearHeaderShape" type="CollisionShape3D" parent="." unique_id=487579178]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.9, 4.65)
+shape = SubResource("BoxShape3D_cabin_header")
 
-[node name="HouseMesh" type="MeshInstance3D" parent="." unique_id=999452553]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.8, 4)
-mesh = SubResource("BoxMesh_house")
+[node name="CabinRoofShape" type="CollisionShape3D" parent="." unique_id=80870176]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.07, 3.475)
+shape = SubResource("BoxShape3D_cabin_roof")
+
+[node name="HelmConsoleShape" type="CollisionShape3D" parent="." unique_id=1288419432]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.21, 2.73)
+shape = SubResource("BoxShape3D_helm_console")
+
+[node name="PumpPortShape" type="CollisionShape3D" parent="." unique_id=937692659]
+editor_description = "Cuerpo sólido de la bomba de babor. La bomba es arte + Area3D como el resto del mobiliario de cubierta; lo que frena al jugador vive aquí, en la raíz, igual que la consola del timón. Medido del AABB real de PumpVisual."
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.196, 1.425, 0.762)
+shape = SubResource("BoxShape3D_pump_port")
+
+[node name="BoatVisual" parent="." unique_id=420190821 instance=ExtResource("3_visual")]
+
+[node name="UpgradeSockets" type="Node3D" parent="." unique_id=898965259]
+editor_description = "Anclajes nativos de Godot: sobreviven a cada reexportacion del GLB. Instanciar las mejoras como hijas del socket correspondiente."
+
+[node name="Helm" type="Marker3D" parent="UpgradeSockets" unique_id=661539885]
+editor_description = "Eje del timón visible; -Z local mira hacia el jugador. Se puede reemplazar o animar sin reexportar colisiones."
+transform = Transform3D(-1, 0, 2.5351817e-06, 0, 1, 0, -2.5351817e-06, 0, -1, 0.25, 1.76, 3.085)
+
+[node name="Sonar" type="Marker3D" parent="UpgradeSockets" unique_id=2077133951]
+editor_description = "Pantalla de sonar a babor del timón; -Z local mira hacia el jugador dentro de la cabina."
+transform = Transform3D(-1, 0, 2.5351817e-06, 0, 1, 0, -2.5351817e-06, 0, -1, -0.48, 1.63, 3.034)
+
+[node name="PumpPort" type="Marker3D" parent="UpgradeSockets" unique_id=1771042186]
+editor_description = "Bomba manual base, lado de babor; reserva aproximada 0,8 x 1,2 m."
+transform = Transform3D(-3.6199901e-06, 0, -1, 0, 1, 0, 1, 0, -3.6199901e-06, -1.3, 1.05, 0.75)
+
+[node name="BombaManual" parent="UpgradeSockets/PumpPort" unique_id=1775091831 instance=ExtResource("7_bomba")]
+
+[node name="PumpStarboard" type="Marker3D" parent="UpgradeSockets" unique_id=751277156]
+editor_description = "Segunda bomba o bomba eléctrica, lado de estribor; reserva aproximada 0,8 x 1,2 m."
+transform = Transform3D(-3.6199901e-06, 0, 1, 0, 1, 0, -1, 0, -3.6199901e-06, 1.3, 1.05, 0.75)
+
+[node name="GearPort" type="Marker3D" parent="UpgradeSockets" unique_id=1979765581]
+editor_description = "Caña, soporte, red o nasas sobre babor; -Z local apunta fuera del barco."
+transform = Transform3D(-3.6199901e-06, 0, 1, 0, 1, 0, -1, 0, -3.6199901e-06, -2.37, 1.32, -1.75)
+
+[node name="SoporteCania" parent="UpgradeSockets/GearPort" unique_id=258445195 instance=ExtResource("6_soporte")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.42, 0)
+
+[node name="GearStarboard" type="Marker3D" parent="UpgradeSockets" unique_id=1689636328]
+editor_description = "Caña, soporte, red o nasas sobre estribor; -Z local apunta fuera del barco."
+transform = Transform3D(-3.6199901e-06, 0, -1, 0, 1, 0, 1, 0, -3.6199901e-06, 2.37, 1.32, -1.75)
+
+[node name="SoporteCania" parent="UpgradeSockets/GearStarboard" unique_id=345203797 instance=ExtResource("6_soporte")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.42, 0)
+
+[node name="Winch" type="Marker3D" parent="UpgradeSockets" unique_id=1504998490]
+editor_description = "Chigre central; queda libre hasta que se compre la mejora de red."
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.05, -1.5)
+
+[node name="HoldForward" type="Marker3D" parent="UpgradeSockets" unique_id=1375254773]
+editor_description = "Escotilla y celda de bodega de proa."
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.05, -2.65)
+
+[node name="HoldAft" type="Marker3D" parent="UpgradeSockets" unique_id=413460974]
+editor_description = "Escotilla y celda de bodega de popa."
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.05, -0.1)
+
+[node name="Bodega" parent="UpgradeSockets/HoldAft" unique_id=1863196982 instance=ExtResource("4_bodega")]
+transform = Transform3D(-1, 0, -8.74228e-08, 0, 1, 0, 8.74228e-08, 0, -1, 0, 0, 0)
+
+[node name="Engine" type="Marker3D" parent="UpgradeSockets" unique_id=759497435]
+editor_description = "Motor bajo cubierta; el hatch visual queda encima."
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.35, 1.55)
+
+[node name="LightBow" type="Marker3D" parent="UpgradeSockets" unique_id=186509365]
+editor_description = "Foco o luz de navegación de proa."
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.85, -5.2)
+
+[node name="LightStern" type="Marker3D" parent="UpgradeSockets" unique_id=65797441]
+editor_description = "Foco de trabajo o luz de navegación de popa."
+transform = Transform3D(-1, 0, 2.5351817e-06, 0, 1, 0, -2.5351817e-06, 0, -1, 0, 1.95, 5.69)
+
+[node name="Lookout" type="Marker3D" parent="UpgradeSockets" unique_id=182053733]
+editor_description = "Base del mástil y futura cofa de vigía."
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.25, 2.05)
+
+[node name="Ganchos" type="Node3D" parent="." unique_id=230478558]
+editor_description = "Ganchos fijos del farol: mobiliario del barco, no mejoras. Frente de cabina, uno por banda."
+
+[node name="GanchoCabinaBabor" parent="Ganchos" unique_id=1288254352 instance=ExtResource("5_gancho")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.85, 2.32, 2.16)
+
+[node name="GanchoCabinaEstribor" parent="Ganchos" unique_id=734881784 instance=ExtResource("5_gancho")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.85, 2.32, 2.16)
+
+[node name="CuboCebo" parent="." unique_id=854389526 instance=ExtResource("7_cubo")]
+editor_description = "Cubo de cebo: mobiliario, no mejora — lo que se compra en puerto es su contenido. En el trayecto natural entre la bodega de popa y los soportes de caña."
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.15, 1.05, -1)
 
 [node name="ProbeBowPort" type="Marker3D" parent="." unique_id=2022099730]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.5, -0.7, -4.5)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.18, -0.7, -4)
 script = ExtResource("2_probe")
-volume = 1.5
-height = 1.4
+volume = 3.0
+height = 2.8
 drag_area = 6.5
 
 [node name="ProbeBowStarboard" type="Marker3D" parent="." unique_id=1849879427]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.5, -0.7, -4.5)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.18, -0.7, -4)
 script = ExtResource("2_probe")
-volume = 1.5
-height = 1.4
+volume = 3.0
+height = 2.8
 drag_area = 6.5
 
 [node name="ProbeMidBowPort" type="Marker3D" parent="." unique_id=1203454628]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.5, -0.7, -1.5)
 script = ExtResource("2_probe")
-volume = 1.5
-height = 1.4
+volume = 3.0
+height = 2.8
 drag_area = 6.5
 
 [node name="ProbeMidBowStarboard" type="Marker3D" parent="." unique_id=1308578937]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.5, -0.7, -1.5)
 script = ExtResource("2_probe")
-volume = 1.5
-height = 1.4
+volume = 3.0
+height = 2.8
 drag_area = 6.5
 
 [node name="ProbeMidSternPort" type="Marker3D" parent="." unique_id=1656373441]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.5, -0.7, 1.5)
 script = ExtResource("2_probe")
-volume = 1.5
-height = 1.4
+volume = 3.0
+height = 2.8
 drag_area = 6.5
 
 [node name="ProbeMidSternStarboard" type="Marker3D" parent="." unique_id=178668548]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.5, -0.7, 1.5)
 script = ExtResource("2_probe")
-volume = 1.5
-height = 1.4
+volume = 3.0
+height = 2.8
 drag_area = 6.5
 
 [node name="ProbeSternPort" type="Marker3D" parent="." unique_id=958563137]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.5, -0.7, 4.5)
 script = ExtResource("2_probe")
-volume = 1.5
-height = 1.4
+volume = 3.0
+height = 2.8
 drag_area = 6.5
 
 [node name="ProbeSternStarboard" type="Marker3D" parent="." unique_id=1199117167]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.5, -0.7, 4.5)
 script = ExtResource("2_probe")
-volume = 1.5
-height = 1.4
+volume = 3.0
+height = 2.8
 drag_area = 6.5
+
+[node name="RainShelterCabin" type="GPUParticlesCollisionBox3D" parent="." unique_id=664315356]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.95, 3.475)
+size = Vector3(3.3, 2.9, 3.5)
+
+[node name="PuntosBorda" type="Node3D" parent="."]
+editor_description = "Donde se pregunta si el mar rebasó la regala. Van EN LA TAPA de las barandillas (Y=1.75, la cara de arriba de RailPort/RailStarboard/RailStern): el agua entre la cubierta y la tapa golpea el costado, no embarca. La altura no está escrita en ningún .gd — AguaEmbarcada la lee del transform, así que estos puntos se escoran con el barco y el costado hundido embarca antes, gratis."
+
+[node name="AmuraBabor" type="Marker3D" parent="PuntosBorda"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2, 1.75, -3.9)
+
+[node name="AmuraEstribor" type="Marker3D" parent="PuntosBorda"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2, 1.75, -3.9)
+
+[node name="MediaBabor" type="Marker3D" parent="PuntosBorda"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.58, 1.75, 0)
+
+[node name="MediaEstribor" type="Marker3D" parent="PuntosBorda"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.58, 1.75, 0)
+
+[node name="AletaBabor" type="Marker3D" parent="PuntosBorda"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.58, 1.75, 4.5)
+
+[node name="AletaEstribor" type="Marker3D" parent="PuntosBorda"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.58, 1.75, 4.5)
+
+[node name="AguaEmbarcada" type="Node" parent="."]
+script = ExtResource("8_agua")
+balance = ExtResource("9_agua_balance")

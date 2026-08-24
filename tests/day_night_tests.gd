@@ -46,6 +46,30 @@ func _report() -> void:
 		get_tree().quit(1)
 
 
+## El color del cenit, venga del cielo propio (game/world/sky.gdshader) o del
+## ProceduralSkyMaterial. El test comprueba la HORA, no que material se use.
+func _sky_top(we: WorldEnvironment) -> Color:
+	var mat: Material = we.environment.sky.sky_material
+	var shader_mat := mat as ShaderMaterial
+	if shader_mat != null:
+		return shader_mat.get_shader_parameter(&"sky_top_color")
+	return (mat as ProceduralSkyMaterial).sky_top_color
+
+
+## El cielo propio dibuja los astros a partir de direcciones EXPLICITAS. Si
+## alguien añade una DirectionalLight3D al mundo (paso con la luz del rayo), el
+## cielo NO puede inventarse un disco por ella.
+func _test_sky_has_no_stray_discs(scene: Node) -> void:
+	var lights: Array = scene.find_children("*", "DirectionalLight3D", true, false)
+	for l in lights:
+		var dl := l as DirectionalLight3D
+		if dl.name == "Sun" or dl.name == "Moon":
+			continue
+		_check(dl.sky_mode == DirectionalLight3D.SKY_MODE_LIGHT_ONLY,
+			"%s no pinta disco en el cielo" % dl.name,
+			"sky_mode = %d" % dl.sky_mode)
+
+
 func _make_cycle(start_hour: float) -> DayNightCycle:
 	var c := DayNightCycle.new()
 	c.profile = load("res://resources/day_night/profile_default.tres")
@@ -158,11 +182,20 @@ func _test_scene_wiring(path: String) -> void:
 	var moon := scene.get_node_or_null(^"Moon") as DirectionalLight3D
 	var we := scene.get_node(^"WorldEnvironment") as WorldEnvironment
 	_check(moon != null, "%s tiene luna" % label)
+	_test_sky_has_no_stray_discs(scene)
+	# El cielo propio muta cada frame (nubes que corren, encapotado por furia).
+	# En AUTOMATIC Godot elige INCREMENTAL cuando el shader usa uniforms propios,
+	# y ese modo amortigua el muestreo sobre varios frames: con un cielo que
+	# cambia siempre, la luz ambiente queda desfasada y BOMBEA. REALTIME usa el
+	# filtrado rapido, que es justo el caso de uso de un cielo animado.
+	_check(we.environment.sky.process_mode == Sky.PROCESS_MODE_REALTIME,
+		"%s: el cielo se procesa en REALTIME" % label,
+		"process_mode = %d" % we.environment.sky.process_mode)
 
 	# A las 12:00 exactas: reloj congelado en 0 y hora de arranque 12.
 	cycle.start_hour = 12.0
 	await get_tree().process_frame
-	var day_sky: Color = (we.environment.sky.sky_material as ProceduralSkyMaterial).sky_top_color
+	var day_sky: Color = _sky_top(we)
 	var sun_day: float = sun.light_energy
 	_check(sun_day > 1.0, "%s: sol pleno a mediodia" % label, "energia %.2f" % sun_day)
 	_check(not cycle.is_night(), "%s: mediodia no es noche" % label)
@@ -170,7 +203,7 @@ func _test_scene_wiring(path: String) -> void:
 	# Salto a medianoche.
 	cycle.advance_hours(12.0)
 	await get_tree().process_frame
-	var night_sky: Color = (we.environment.sky.sky_material as ProceduralSkyMaterial).sky_top_color
+	var night_sky: Color = _sky_top(we)
 	_check(sun.light_energy < 0.05, "%s: el sol se apaga de noche" % label,
 		"energia %.3f" % sun.light_energy)
 	_check(not sun.shadow_enabled, "%s: y sus sombras tambien" % label)

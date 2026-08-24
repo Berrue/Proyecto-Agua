@@ -1,0 +1,121 @@
+[gd_scene load_steps=13 format=3]
+
+[ext_resource type="Script" path="res://game/props/farol.gd" id="1_farol"]
+[ext_resource type="Script" path="res://addons/ocean/physics/buoyancy_probe.gd" id="2_probe"]
+
+[sub_resource type="CylinderShape3D" id="Shape_farol"]
+height = 0.3
+radius = 0.075
+
+[sub_resource type="StandardMaterial3D" id="Mat_laton"]
+albedo_color = Color(0.541, 0.416, 0.165, 1)
+metallic = 0.55
+roughness = 0.6
+
+[sub_resource type="StandardMaterial3D" id="Mat_globo"]
+albedo_color = Color(1, 0.914, 0.682, 1)
+roughness = 0.35
+emission_enabled = true
+emission = Color(1, 0.804, 0.529, 1)
+emission_energy_multiplier = 4.0
+
+[sub_resource type="CylinderMesh" id="Mesh_deposito"]
+top_radius = 0.062
+bottom_radius = 0.068
+height = 0.075
+radial_segments = 10
+rings = 1
+
+[sub_resource type="CylinderMesh" id="Mesh_tapa"]
+top_radius = 0.045
+bottom_radius = 0.07
+height = 0.028
+radial_segments = 10
+rings = 1
+
+[sub_resource type="CylinderMesh" id="Mesh_tubo"]
+top_radius = 0.011
+bottom_radius = 0.011
+height = 0.2
+radial_segments = 6
+rings = 1
+
+[sub_resource type="SphereMesh" id="Mesh_globo"]
+radius = 0.052
+height = 0.115
+radial_segments = 12
+rings = 6
+
+[sub_resource type="TorusMesh" id="Mesh_asa"]
+inner_radius = 0.05
+outer_radius = 0.056
+rings = 12
+ring_segments = 6
+
+[node name="Farol" type="RigidBody3D"]
+collision_layer = 1
+collision_mask = 1
+mass = 2.0
+center_of_mass_mode = 1
+center_of_mass = Vector3(0, -0.09, 0)
+script = ExtResource("1_farol")
+nombre = "farol de tormenta"
+colgable = true
+drag_coefficient = 0.9
+angular_drag = 0.8
+max_submersion_depth = 0.6
+slam_threshold = 5.0
+tick_divisor = 2
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+shape = SubResource("Shape_farol")
+
+[node name="Deposito" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.105, 0)
+mesh = SubResource("Mesh_deposito")
+surface_material_override/0 = SubResource("Mat_laton")
+
+[node name="TuboIzq" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.058, -0.02, 0)
+mesh = SubResource("Mesh_tubo")
+surface_material_override/0 = SubResource("Mat_laton")
+
+[node name="TuboDer" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.058, -0.02, 0)
+mesh = SubResource("Mesh_tubo")
+surface_material_override/0 = SubResource("Mat_laton")
+
+[node name="Globo" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.02, 0)
+mesh = SubResource("Mesh_globo")
+surface_material_override/0 = SubResource("Mat_globo")
+
+[node name="Tapa" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.055, 0)
+mesh = SubResource("Mesh_tapa")
+surface_material_override/0 = SubResource("Mat_laton")
+
+[node name="Asa" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.09, 0)
+mesh = SubResource("Mesh_asa")
+surface_material_override/0 = SubResource("Mat_laton")
+
+[node name="Luz" type="OmniLight3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.02, 0)
+light_color = Color(1, 0.804, 0.529, 1)
+light_energy = 1.6
+light_specular = 0.2
+shadow_bias = 0.03
+shadow_normal_bias = 1.2
+distance_fade_begin = 18.0
+distance_fade_length = 8.0
+omni_range = 7.5
+omni_attenuation = 1.5
+omni_shadow_mode = 0
+
+[node name="Sonda" type="Marker3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.02, 0)
+script = ExtResource("2_probe")
+volume = 0.006
+height = 0.14
+drag_area = 0.03

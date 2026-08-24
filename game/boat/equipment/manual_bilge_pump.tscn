@@ -1,0 +1,130 @@
+[gd_scene load_steps=8 format=3]
+
+[ext_resource type="Script" path="res://game/boat/equipment/manual_bilge_pump.gd" id="1_pump"]
+[ext_resource type="PackedScene" path="res://game/boat/equipment/models/manual_bilge_pump.glb" id="2_visual"]
+[ext_resource type="Script" path="res://game/boat/equipment/stretch_hose.gd" id="3_hose"]
+
+[sub_resource type="StandardMaterial3D" id="Mat_hose"]
+albedo_color = Color(0.105, 0.026, 0.012, 1)
+metallic = 0.0
+roughness = 0.92
+
+[sub_resource type="StandardMaterial3D" id="Mat_hemp"]
+albedo_color = Color(0.43, 0.285, 0.105, 1)
+metallic = 0.0
+roughness = 1.0
+
+[sub_resource type="CapsuleShape3D" id="Shape_head"]
+radius = 0.1
+height = 0.42
+
+[sub_resource type="BoxShape3D" id="Shape_estacion"]
+size = Vector3(0.7, 1.1, 0.62)
+
+[sub_resource type="BoxMesh" id="Mesh_footprint"]
+size = Vector3(0.7, 0.006, 1)
+
+[node name="ManualBilgePump" type="Node3D"]
+editor_description = "Módulo autónomo del barco y del Player. Montado en FishingBoat/UpgradeSockets/PumpPort sin offset: su raíz ES el socket y BaseContact compensa los 25 cm hasta cubierta. Lo que frena al jugador es PumpPortShape, en la raíz del barco."
+script = ExtResource("1_pump")
+stored_coil_path = NodePath("PumpVisual/HoseCoil")
+
+[node name="MountOrigin" type="Marker3D" parent="."]
+editor_description = "Origen que más adelante se alineará directamente con UpgradeSockets/PumpPort."
+
+[node name="BaseContact" type="Marker3D" parent="."]
+position = Vector3(0, -0.25, 0)
+editor_description = "Plano de apoyo: PumpPort está 25 cm sobre la cubierta jugable."
+
+[node name="PumpVisual" parent="." instance=ExtResource("2_visual")]
+position = Vector3(0, -0.25, 0)
+
+[node name="PumpBase" type="Node3D" parent="."]
+position = Vector3(0, -0.25, 0)
+editor_description = "Referencia nativa de la base; la malla editable se llama PumpVisual/PumpBase."
+
+[node name="LeverPivot" type="Node3D" parent="."]
+position = Vector3(0, 0.66, 0)
+editor_description = "Pivote nativo para la futura cadencia; LeverArm conserva además su origen funcional dentro del GLB."
+
+[node name="Lever" type="Node3D" parent="LeverPivot"]
+editor_description = "Referencia a PumpVisual/LeverArm; todavía no consume input ni bombea."
+
+[node name="CadenceIndicator" type="Node3D" parent="."]
+position = Vector3(0.205, 0.44, -0.213)
+editor_description = "Testigo vertical medieval: una pesa recorre muescas talladas y reemplaza el manómetro circular moderno."
+
+[node name="CadenceWeightPivot" type="Node3D" parent="CadenceIndicator"]
+editor_description = "La malla PumpVisual/CadenceTongue conserva su origen en este mismo centro."
+
+[node name="HoseAssembly" type="Node3D" parent="."]
+script = ExtResource("3_hose")
+anchor_path = NodePath("Anchor")
+rest_path = NodePath("HoseRest")
+hose_mesh_path = NodePath("HoseMesh")
+pickup_area_path = NodePath("PickupHead")
+pickup_visual_path = NodePath("../PumpVisual/IntakeHead")
+longitud_inicial = 1.35
+longitud_maxima = 6.8
+radio = 0.0275
+velocidad_despliegue = 5.0
+holgura_objetivo = 0.2
+material_manguera = SubResource("Mat_hose")
+material_refuerzo = SubResource("Mat_hemp")
+separacion_refuerzo = 0.15
+radio_refuerzo = 0.004
+gravedad = 8.0
+comba_maxima_bajo_extremos = 0.18
+
+[node name="Anchor" type="Marker3D" parent="HoseAssembly"]
+position = Vector3(-0.332, -0.005, 0)
+editor_description = "Conversión Godot de HoseAnchorArt, incluida la compensación de montaje -0,25 m."
+
+[node name="HoseRest" type="Marker3D" parent="HoseAssembly"]
+position = Vector3(0.2, 0.333, 0.27)
+editor_description = "Origen de IntakeHead apoyado junto a la bobina antes de tomarlo."
+
+[node name="StoredCoil" type="Node3D" parent="HoseAssembly"]
+editor_description = "Referencia contractual; la geometría editable almacenada es PumpVisual/HoseCoil."
+
+[node name="HoseMesh" type="MeshInstance3D" parent="HoseAssembly"]
+cast_shadow = 1
+
+[node name="PickupHead" type="Area3D" parent="HoseAssembly"]
+editor_description = "Área detectable del extremo de aspiración; el visual editable sincronizado es PumpVisual/IntakeHead."
+collision_layer = 1
+collision_mask = 0
+monitoring = false
+monitorable = true
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="HoseAssembly/PickupHead"]
+position = Vector3(0, -0.18, 0)
+shape = SubResource("Shape_head")
+
+[node name="GripMarker" type="Marker3D" parent="HoseAssembly/PickupHead"]
+editor_description = "Socket que el interactor central podrá entregar a una mano; ahora lo usa el banco standalone."
+
+[node name="OperatorStand" type="Marker3D" parent="."]
+position = Vector3(0, -0.25, -0.72)
+editor_description = "El operador mira la palanca y el testigo tallado desde -Z local, hacia el pasillo central."
+
+[node name="EstacionBombeo" type="Area3D" parent="."]
+position = Vector3(0, 0.15, 0)
+collision_layer = 1
+collision_mask = 0
+editor_description = "Lo que el rayo del jugador tiene que ENCONTRAR para ofrecer «E bombear». Hace falta un Area3D propia porque el cuerpo sólido de la bomba (PumpPortShape) vive en la raíz del RigidBody del barco, así que un raycast contra él devuelve el FishingBoat entero y el interactor no sabría que estaba mirando la bomba. Capa 1 y máscara 0: se deja ver, no empuja nada."
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="EstacionBombeo"]
+shape = SubResource("Shape_estacion")
+
+[node name="DischargeSocket" type="Marker3D" parent="."]
+position = Vector3(0.318, 0.362, -0.085)
+editor_description = "Punto futuro para descarga, salpicaduras y feedback de cavitación."
+
+[node name="PlacementFootprint" type="Marker3D" parent="."]
+position = Vector3(0, -0.247, 0)
+editor_description = "Reserva contractual 0,70 x 1,00 m, dentro del máximo 0,80 x 1,20 m de PumpPort."
+
+[node name="EditorFootprint" type="MeshInstance3D" parent="PlacementFootprint"]
+visible = false
+mesh = SubResource("Mesh_footprint")

@@ -1,0 +1,109 @@
+[gd_scene load_steps=11 format=3]
+
+[ext_resource type="Script" path="res://tests/capture_fish_hold.gd" id="1_capture"]
+[ext_resource type="PackedScene" path="res://game/boat/bodega.tscn" id="2_hold"]
+
+[sub_resource type="ProceduralSkyMaterial" id="SkyMaterial"]
+sky_top_color = Color(0.018, 0.075, 0.094, 1)
+sky_horizon_color = Color(0.12, 0.24, 0.27, 1)
+ground_bottom_color = Color(0.015, 0.04, 0.045, 1)
+ground_horizon_color = Color(0.12, 0.22, 0.23, 1)
+sun_angle_max = 18.0
+sun_curve = 0.09
+
+[sub_resource type="Sky" id="Sky"]
+sky_material = SubResource("SkyMaterial")
+
+[sub_resource type="Environment" id="Environment"]
+background_mode = 2
+sky = SubResource("Sky")
+ambient_light_source = 3
+ambient_light_color = Color(0.34, 0.48, 0.51, 1)
+ambient_light_sky_contribution = 0.72
+ambient_light_energy = 0.74
+tonemap_mode = 3
+
+[sub_resource type="StandardMaterial3D" id="Mat_deck"]
+resource_name = "M_CaptureDeck"
+albedo_color = Color(0.29, 0.145, 0.055, 1)
+roughness = 0.84
+
+[sub_resource type="BoxMesh" id="Mesh_deck_side"]
+material = SubResource("Mat_deck")
+size = Vector3(2.05, 0.12, 4.24)
+
+[sub_resource type="BoxMesh" id="Mesh_deck_end"]
+material = SubResource("Mat_deck")
+size = Vector3(1.95, 0.12, 1.48)
+
+[sub_resource type="StandardMaterial3D" id="Mat_seam"]
+resource_name = "M_CaptureDeckSeam"
+albedo_color = Color(0.12, 0.11, 0.10, 1)
+roughness = 1.0
+
+[sub_resource type="BoxMesh" id="Mesh_seam"]
+material = SubResource("Mat_seam")
+size = Vector3(0.025, 0.014, 4.5)
+
+[node name="CaptureFishHold" type="Node3D"]
+script = ExtResource("1_capture")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment")
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+rotation = Vector3(-0.92, -0.58, 0)
+light_color = Color(1, 0.90, 0.76, 1)
+light_energy = 1.25
+shadow_enabled = true
+directional_shadow_max_distance = 30.0
+
+[node name="Fill" type="OmniLight3D" parent="."]
+position = Vector3(-2.5, 3.2, 2.6)
+light_color = Color(0.58, 0.68, 0.65, 1)
+light_energy = 1.35
+omni_range = 8.0
+shadow_enabled = true
+
+[node name="HoldInteriorFill" type="OmniLight3D" parent="."]
+position = Vector3(0, 1.55, 0.65)
+light_color = Color(1, 0.82, 0.62, 1)
+light_energy = 1.55
+omni_range = 3.2
+shadow_enabled = false
+
+[node name="Deck" type="Node3D" parent="."]
+
+[node name="Port" type="MeshInstance3D" parent="Deck"]
+position = Vector3(-2, 0.94, 0)
+mesh = SubResource("Mesh_deck_side")
+
+[node name="Starboard" type="MeshInstance3D" parent="Deck"]
+position = Vector3(2, 0.94, 0)
+mesh = SubResource("Mesh_deck_side")
+
+[node name="Bow" type="MeshInstance3D" parent="Deck"]
+position = Vector3(0, 0.94, -1.38)
+mesh = SubResource("Mesh_deck_end")
+
+[node name="Aft" type="MeshInstance3D" parent="Deck"]
+position = Vector3(0, 0.94, 1.38)
+mesh = SubResource("Mesh_deck_end")
+
+[node name="SeamPort" type="MeshInstance3D" parent="Deck"]
+position = Vector3(-1.48, 1.008, 0)
+mesh = SubResource("Mesh_seam")
+
+[node name="SeamStarboard" type="MeshInstance3D" parent="Deck"]
+position = Vector3(1.48, 1.008, 0)
+mesh = SubResource("Mesh_seam")
+
+[node name="Bodega" parent="." instance=ExtResource("2_hold")]
+position = Vector3(0, 1, 0)
+
+[node name="Camera3D" type="Camera3D" parent="."]
+position = Vector3(4.35, 3.65, 4.85)
+current = true
+fov = 48.0
+near = 0.05
+far = 80.0

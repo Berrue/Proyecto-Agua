@@ -13,10 +13,12 @@ corner_radius_bottom_left = 6
 script = ExtResource("1_hud")
 
 [node name="Panel" type="PanelContainer" parent="."]
+anchor_bottom = 1.0
 offset_left = 14.0
 offset_top = 14.0
 offset_right = 336.0
-offset_bottom = 612.0
+offset_bottom = -14.0
+grow_vertical = 2
 theme_override_styles/panel = SubResource("StyleBoxFlat_panel")
 
 [node name="Margin" type="MarginContainer" parent="Panel"]
@@ -26,11 +28,17 @@ theme_override_constants/margin_top = 12
 theme_override_constants/margin_right = 14
 theme_override_constants/margin_bottom = 12
 
-[node name="VBox" type="VBoxContainer" parent="Panel/Margin"]
+[node name="Scroll" type="ScrollContainer" parent="Panel/Margin"]
 layout_mode = 2
+horizontal_scroll_mode = 0
+
+[node name="VBox" type="VBoxContainer" parent="Panel/Margin/Scroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
 theme_override_constants/separation = 8
 
-[node name="Readout" type="RichTextLabel" parent="Panel/Margin/VBox"]
+[node name="Readout" type="RichTextLabel" parent="Panel/Margin/Scroll/VBox"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(294, 330)
 layout_mode = 2
@@ -38,11 +46,11 @@ bbcode_enabled = true
 fit_content = true
 scroll_active = false
 
-[node name="FuryLabel" type="Label" parent="Panel/Margin/VBox"]
+[node name="FuryLabel" type="Label" parent="Panel/Margin/Scroll/VBox"]
 layout_mode = 2
 text = "DIAL DE FURIA"
 
-[node name="FurySlider" type="HSlider" parent="Panel/Margin/VBox"]
+[node name="FurySlider" type="HSlider" parent="Panel/Margin/Scroll/VBox"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 22)
 layout_mode = 2
@@ -50,30 +58,30 @@ max_value = 10.0
 step = 0.1
 value = 3.0
 
-[node name="Presets" type="HBoxContainer" parent="Panel/Margin/VBox"]
+[node name="Presets" type="HBoxContainer" parent="Panel/Margin/Scroll/VBox"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 6
 
-[node name="TsunamiSep" type="HSeparator" parent="Panel/Margin/VBox"]
+[node name="TsunamiSep" type="HSeparator" parent="Panel/Margin/Scroll/VBox"]
 layout_mode = 2
 
-[node name="TsunamiLabel" type="Label" parent="Panel/Margin/VBox"]
+[node name="TsunamiLabel" type="Label" parent="Panel/Margin/Scroll/VBox"]
 layout_mode = 2
 text = "LANZAR TSUNAMI"
 
-[node name="TsunamiButtons" type="HBoxContainer" parent="Panel/Margin/VBox"]
+[node name="TsunamiButtons" type="HBoxContainer" parent="Panel/Margin/Scroll/VBox"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 6
 
-[node name="LeadLabel" type="Label" parent="Panel/Margin/VBox"]
+[node name="LeadLabel" type="Label" parent="Panel/Margin/Scroll/VBox"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_font_sizes/font_size = 12
 text = "AVISO: 40 s hasta el impacto"
 
-[node name="LeadSlider" type="HSlider" parent="Panel/Margin/VBox"]
+[node name="LeadSlider" type="HSlider" parent="Panel/Margin/Scroll/VBox"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 22)
 layout_mode = 2
@@ -82,14 +90,86 @@ max_value = 120.0
 step = 1.0
 value = 40.0
 
-[node name="ParityToggle" type="CheckButton" parent="Panel/Margin/VBox"]
+[node name="ClimaSep" type="HSeparator" parent="Panel/Margin/Scroll/VBox"]
+layout_mode = 2
+
+[node name="ClimaLabel" type="Label" parent="Panel/Margin/Scroll/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "LLUVIA"
+
+[node name="RainSlider" type="HSlider" parent="Panel/Margin/Scroll/VBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 22)
+layout_mode = 2
+max_value = 1.0
+step = 0.01
+
+[node name="HorarioLabel" type="Label" parent="Panel/Margin/Scroll/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "HORARIO"
+
+[node name="HourSlider" type="HSlider" parent="Panel/Margin/Scroll/VBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 22)
+layout_mode = 2
+max_value = 24.0
+step = 0.25
+
+[node name="HourButtons" type="HBoxContainer" parent="Panel/Margin/Scroll/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="TruenoSep" type="HSeparator" parent="Panel/Margin/Scroll/VBox"]
+layout_mode = 2
+
+[node name="TruenoLabel" type="Label" parent="Panel/Margin/Scroll/VBox"]
+layout_mode = 2
+text = "TRUENO"
+
+[node name="ThunderButtons" type="HBoxContainer" parent="Panel/Margin/Scroll/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="RayoSep" type="HSeparator" parent="Panel/Margin/Scroll/VBox"]
+layout_mode = 2
+
+[node name="RayoLabel" type="Label" parent="Panel/Margin/Scroll/VBox"]
+layout_mode = 2
+text = "RAYO"
+
+[node name="BoltButtons" type="HBoxContainer" parent="Panel/Margin/Scroll/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="ReduceFlashToggle" type="CheckButton" parent="Panel/Margin/Scroll/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Reducir destellos"
+
+[node name="ParteLabel" type="Label" parent="Panel/Margin/Scroll/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "PARTE METEOROLOGICO"
+
+[node name="ParteButtons" type="HBoxContainer" parent="Panel/Margin/Scroll/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="ParityToggle" type="CheckButton" parent="Panel/Margin/Scroll/VBox"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "Marcadores de paridad"
 
-[node name="Hint" type="Label" parent="Panel/Margin/VBox"]
+[node name="Hint" type="Label" parent="Panel/Margin/Scroll/VBox"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 11
 text = "WASD moverse · espacio saltar · ESC liberar raton
-1/2/3 lanzar tsunami · 0 cancelarlo · N +3 horas"
+1/2/3 lanzar tsunami · 0 cancelarlo · N +3 horas
+T trueno · R rayo · P generar parte"
 autowrap_mode = 2

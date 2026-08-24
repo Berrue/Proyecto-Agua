@@ -22,21 +22,100 @@ extends Node3D
 signal fish_landed(fish: Fish)
 signal line_snapped()
 signal fish_escaped()
+## Cebo puesto o gastado: lo escucha el cubo para enseñar cuanto queda.
+signal cebo_cambiado()
 
 enum State { IDLE, CASTING, WAITING, NIBBLING, BITE, FIGHT }
 
 const CAST_MIN_DIST := 5.0
 const CAST_MAX_DIST := 18.0
 const CAST_CHARGE_SECONDS := 1.2
+## Ventana de picada con la caña EN LA MANO: lo que tarda un clic al ver el "!".
 const BITE_WINDOW := 1.8
+## Ventana con la caña CLAVADA en un soporte de borda. Casi el doble, y no es
+## una concesion: es que el gesto es OTRO. Con la caña en la mano solo hay que
+## hacer clic; clavada hay que oir el chomp, soltar lo que portes, cruzar la
+## cubierta, apuntar al soporte y retomarla (E) antes de clavar el pez.
+##
+## El presupuesto medido contra el barco real (sockets Gear* a +-1.92 en X,
+## -1.75 en Z; walk_speed 4.2 m/s): reaccion ~0.3 s + soltar la carga ~0.2 s +
+## cruzar hasta 3.84 m ~1.1 s + apuntar (el rayo del Portador llega a 2.2 m)
+## ~0.3 s + E y clic ~0.2 s = ~2.1 s en el peor caso razonable. Con 1.8 s la
+## promesa del soporte ("clavas, achicas o estibas, y vuelves al !") era
+## literalmente imposible: la caña pescaba sola para que el pez se te fuera
+## siempre. `tests/fishing_tests` protege el margen contra la diagonal REAL de
+## la cubierta, asi que agrandar el barco o bajar este numero salta como fallo.
+##
+## Diegeticamente lo sostiene la fisica de un rod holder de verdad: el pez
+## engancha contra una caña AMARRADA que no cede, y esa resistencia lo clava a
+## medias sola — por eso los soportes existen en la pesca real.
+const BITE_WINDOW_SOPORTE := 3.5
 ## Cruce del tren de clicks al loop de buzz (correccion del critico: por encima
 ## de esto el scheduler de frames no llega; la fusion se hornea en el loop).
 const BUZZ_CROSSOVER_HZ := 25.0
+## Nivel de la cama de recogida (el forcejeo del pez mientras tiras de el).
+## Va DEBAJO del tren de clicks a proposito: la tension es el canal que el
+## jugador tiene que poder decodificar (regla 8), y una cama continua encima de
+## los clicks se los come. Este es el numero a mover si suena alta o baja.
+const HAUL_DB := -14.0
+## Vueltas por segundo de la manivela mientras recoges, y la multiplicacion del
+## carrete (rotor : manivela). El 5.2:1 es la relacion de un carrete de spinning
+## real, y no es un adorno: el rotor girando cinco veces mas rapido que la mano
+## es lo que hace que la recogida se LEA como recogida y no como una pieza
+## suelta dando vueltas. La velocidad escala con `reel_factor`, asi que una caña
+## mejor tambien se ve mas rapida — la regla del arbol de mejoras (piezas que se
+## ven), aplicada a la unica pieza movil de la caña.
+const REEL_TURNS_PER_SECOND := 2.6
+const REEL_GEAR_RATIO := 5.2
+
+# --- El doblez: cuanto gira la muñeca y cuanto se CURVA el cuerpo -----------
+# `_bend` sigue siendo UN solo numero (la misma señal de tension de siempre,
+# regla 8), pero ahora se reparte en dos gestos distintos que un pescador
+# distingue de un vistazo: la caña entera inclinandose (tus manos cediendo) y
+# el cuerpo arqueandose (el pez cargando la caña). Antes se lo llevaba todo la
+# inclinacion, y por eso la caña parecia un palo de escoba con bisagra.
+#
+# La suma de los dos angulos se mantiene por encima del doblez de antes: la
+# silueta cargada tiene que leerse IGUAL de fuerte desde la borda de al lado.
+const BEND_RIGID_SHARE := 0.45
+const BEND_CURVE_GAIN := 1.3
+## Como se reparte la curva entre los seis huesos, de la mano a la punta. Va
+## cargada hacia delante porque asi dobla una caña real (accion rapida): el
+## tramo de abajo aguanta y la punta es la que se arquea. Repartirlo por igual
+## da un arco de circunferencia, que lee como manguera, no como caña.
+const BEND_BONE_WEIGHTS := [0.06, 0.10, 0.15, 0.20, 0.24, 0.25]
+
+## Cuantas picadas de cebo caben en el anzuelo de una cebada. Seis y no una:
+## con una carga por viaje al cubo, cebar seria una tarea; con seis es un
+## ritmo — vuelves al cubo cada tantos peces, como a la bodega.
+const CEBO_CARGAS_MAX := 6
+
+## El arbol de aparejos en orden (DISENO §3). El HUD de debug las cicla con C;
+## cuando exista la lonja, comprarlas recorrera esta misma escalera.
+const TIER_PATHS: Array[String] = [
+	"res://resources/rod_tiers/tier_1_iniciacion.tres",
+	"res://resources/rod_tiers/tier_2_faena.tres",
+	"res://resources/rod_tiers/tier_3_altura.tres",
+]
 
 @export var player_path: NodePath
 @export var fish_scene: PackedScene
+## La caña montada (sedal, carrete, alcance). Sin asignar = la de iniciación.
+@export var tier: RodTier
 @export var view_offset := Vector3(0.3, -0.34, -0.62)
 @export var view_angles_deg := Vector3(-55.0, -10.0, -8.0)
+## Cuanto rueda el MODELO sobre su propio eje dentro del pivote.
+##
+## Un carrete de spinning cuelga hacia abajo, y hacia abajo es exactamente donde
+## el brazo del viewmodel (una capsula gorda que sale de la esquina de la
+## pantalla) lo tapa entero: la pieza que gira cuando recoges, la unica que
+## cuenta lo que estan haciendo tus manos, quedaba invisible. Con la caña rodada
+## el carrete asoma por la izquierda del brazo sin dejar de colgar por debajo,
+## que es como se sujeta una caña de spinning de verdad al recoger.
+##
+## No se toca el angulo de la caña (`view_angles_deg`): ese esta jugado en
+## playtest y mueve la punta, el sedal y el encuadre entero.
+@export_range(-90.0, 90.0, 1.0) var model_roll_deg: float = 50.0
 
 var state: State = State.IDLE
 var fight := FightModel.new()
@@ -45,7 +124,15 @@ var deck_accel_y: float = 0.0
 
 var _player: Player
 var _camfx: CameraFeedback
+## El RNG de la PARTIDA: espera, toques falsos, especie, fases de la lucha.
+## Todo lo que decide algo que el jugador vive como resultado.
 var _rng := RandomNumberGenerator.new()
+
+## El RNG de la PRESENTACION: clicks del freno, crujidos, el tumbo del pez al
+## caer. Separado a proposito (regla 4): mientras compartian secuencia,
+## cualquier retoque de audio o de feel desplazaba la cadena de especies — una
+## trampa que no se manifiesta hasta el mes seis.
+var _rng_fx := RandomNumberGenerator.new()
 var _charge: float = 0.0
 var _wait_left: float = 0.0
 var _bite_left: float = 0.0
@@ -64,6 +151,13 @@ var _bend: float = 0.0
 var _bend_vel: float = 0.0
 var _lateral: float = 0.0
 var _lateral_vel: float = 0.0
+## Inclinacion sostenida del tira-y-afloja: el pez tira hacia su lado, tus
+## teclas tiran hacia el tuyo, y la contra CORRECTA la deja centrada — la caña
+## quieta ES la señal de que estas aguantando bien. Las manos del viewmodel
+## cuelgan del pivote, asi que acompañan cada tiron sin animar una linea.
+var _lean: float = 0.0
+var _lean_vel: float = 0.0
+var _lean_goal: float = 0.0
 
 # --- feel: audio -------------------------------------------------------------
 var _click_cooldown: float = 0.0
@@ -80,9 +174,41 @@ var _adrift_left: float = 0.0 ## la boya perdida, a la deriva
 var _rumble_refresh: float = 0.0
 var _reel_rearm: bool = false ## tras clavar, recoger exige un clic NUEVO
 
+## El cebo en el anzuelo y cuantas picadas le quedan. Lo pone el cubo de
+## cubierta; sin cargas, la caña pesca a pelo (que es lo normal y siempre vale).
+var cebo: TipoCebo = null
+var cebo_cargas: int = 0
+
+## El soporte de borda donde esta clavada, o null si la llevas en la mano.
+## Mientras esta clavada, el soporte es su cuerpo visible: recibe el doblez
+## del muelle real via set_doblado y presta su punta para el sedal.
+var soporte: Node3D = null
+
+## Las dos piezas moviles del carrete y su pose de fabrica. El GLB las exporta
+## con el origen EN su eje de giro (`tools/build_fishing_rod.py`), asi que girar
+## es componer sobre esa pose: nada de tocar la malla.
+var _rotor: Node3D
+var _rotor_base: Basis
+var _handle: Node3D
+var _handle_base: Basis
+var _reel_angle: float = 0.0
+var _reeling: bool = false
+
+## El rig que curva el cuerpo, y todo lo que hace falta para hablar con el sin
+## recalcularlo cada frame. Si el modelo llegara sin esqueleto, `_skel` se queda
+## nulo y la caña vuelve al doblez rigido de antes: fea, pero jugable.
+var _skel: Skeleton3D
+var _huesos := PackedInt32Array()
+var _eje_hueso: Array[Vector3] = []
+var _esq_a_pivote := Transform3D.IDENTITY
+var _punta_esq := Vector3.ZERO
+var _rest_punta_inv := Transform3D.IDENTITY
+
 var _reel_p: AudioStreamPlayer3D
 var _reel_pb: AudioStreamPlaybackPolyphonic
 var _buzz_p: AudioStreamPlayer3D
+var _cast_p: AudioStreamPlayer3D
+var _haul_p: AudioStreamPlayer3D
 var _world_p: AudioStreamPlayer3D
 var _world_pb: AudioStreamPlaybackPolyphonic
 var _ui_p: AudioStreamPlayer
@@ -95,6 +221,24 @@ var _hud: FishingHud
 @onready var _bobber: MeshInstance3D = $Bobber
 @onready var _line: MeshInstance3D = $Line
 @onready var _line_mat := StandardMaterial3D.new()
+
+
+## Objetivo de inclinacion lateral (radianes) del tira-y-afloja. Positivo =
+## izquierda en pantalla. El pez arrastra hacia SU lado; cada tecla tira hacia
+## el suyo (A = izquierda, D = derecha); la contra correcta se cancela y la
+## caña queda centrada. Contrar MAL suma los dos tirones: el error se VE gordo.
+static func lean_target_for(pull_dir: int, holding_left: bool, holding_right: bool,
+		pull_strength: float) -> float:
+	var lean: float = 0.0
+	if pull_dir == FightModel.Pull.LEFT:
+		lean += 0.26 * clampf(pull_strength * 1.6, 0.5, 1.0)
+	elif pull_dir == FightModel.Pull.RIGHT:
+		lean -= 0.26 * clampf(pull_strength * 1.6, 0.5, 1.0)
+	if holding_left:
+		lean += 0.2
+	if holding_right:
+		lean -= 0.2
+	return lean
 
 
 ## El plan de toques falsos: 1-4, separados 0.5-1.5 s. Estatica para el test.
@@ -110,7 +254,23 @@ func _ready() -> void:
 	rotation_degrees = view_angles_deg
 	_player = get_node_or_null(player_path) as Player
 	_camfx = get_parent() as CameraFeedback
+	var modelo := _rod_pivot.get_node_or_null(^"Cania") as Node3D
+	if modelo != null:
+		modelo.rotation.y = deg_to_rad(model_roll_deg)
+		_rotor = modelo.get_node_or_null(^"ReelRotor") as Node3D
+		_handle = modelo.get_node_or_null(^"ReelHandle") as Node3D
+		if _rotor != null:
+			_rotor_base = _rotor.transform.basis
+		if _handle != null:
+			_handle_base = _handle.transform.basis
+		_setup_doblez(modelo)
+	# Escenas viejas o de captura sin tier asignado pescan con la de iniciacion:
+	# el fallo seguro es la caña humilde, nunca una caña nula que reviente.
+	if tier == null:
+		tier = load(TIER_PATHS[0]) as RodTier
+	_apply_tier()
 	_rng.randomize()
+	_rng_fx.randomize()
 	_bobber.visible = false
 	_bobber.top_level = true
 	_line.top_level = true
@@ -138,6 +298,29 @@ func _setup_audio() -> void:
 	_buzz_p.volume_db = -60.0
 	_rod_pivot.add_child(_buzz_p)
 
+	# El latigazo del lanzamiento: sample propio y no polifonico — cuelga del
+	# pivote, asi que sale de la caña que tienes en las manos y los compañeros
+	# lo oyen desde donde estas. Entra bajo a proposito: viene a fondo de escala
+	# y suena a 60 cm de la camara, y el que tiene que mandar es el chomp (el
+	# climax de la picada), no el gesto que lo precede.
+	_cast_p = AudioStreamPlayer3D.new()
+	_cast_p.bus = &"SFX"
+	_cast_p.stream = SfxLibrary.cast_whip
+	_cast_p.volume_db = -9.0
+	_rod_pivot.add_child(_cast_p)
+
+	# La cama de "lo estoy trayendo": loop 3D que vive EN LA BOYA. Como la
+	# distancia de la boya ES el progreso de la lucha, el forcejeo se acerca
+	# solo segun ganas terreno — y la tripulacion oye desde donde. Arranca mudo
+	# y entra/sale con fundido, igual que el buzz: un loop que corta en seco
+	# hace click.
+	_haul_p = AudioStreamPlayer3D.new()
+	_haul_p.bus = &"SFX"
+	_haul_p.stream = SfxLibrary.haul_loop
+	_haul_p.volume_db = -60.0
+	_haul_p.top_level = true
+	add_child(_haul_p)
+
 	# Sonidos del MUNDO (boya, splashes): posicional y top_level, para que los
 	# compañeros oigan DONDE pica y donde lucha el pez.
 	_world_p = AudioStreamPlayer3D.new()
@@ -162,6 +345,7 @@ func _setup_mark() -> void:
 	_mark = Label3D.new()
 	_mark.text = "!"
 	# Tamaño de cartel: tiene que leerse a 20 m por un compañero distraido.
+	_mark.font = GameTypography.display_hud()
 	_mark.font_size = 280
 	_mark.pixel_size = 0.012
 	_mark.modulate = Color(1.0, 0.9, 0.4)
@@ -180,7 +364,9 @@ func _physics_process(delta: float) -> void:
 
 	match state:
 		State.IDLE:
-			if Input.is_action_just_pressed(&"grab"):
+			# Con carga en brazos no hay caña: el click pasa a ser el boton de
+			# lanzar del Portador. Soltar (o colgar) primero, pescar despues.
+			if Input.is_action_just_pressed(&"grab") and _rod_input_ready():
 				state = State.CASTING
 				_charge = 0.0
 		State.CASTING:
@@ -188,11 +374,17 @@ func _physics_process(delta: float) -> void:
 			# Anticipacion controlada por el jugador: rumble debil creciente.
 			_refresh_rumble(delta, 0.1 + _charge * 0.2, 0.0)
 			if Input.is_action_just_released(&"grab"):
-				_cast()
+				# Si agarraste algo a mitad de la carga, la caña se guarda el
+				# gesto: lanzar el sedal con un pez en brazos no es un combo.
+				if _hands_free():
+					_cast()
+				else:
+					state = State.IDLE
+					_stop_rumble()
 		State.WAITING:
 			_wait_left -= delta
 			_lap_sounds(delta)
-			if Input.is_action_just_pressed(&"grab"):
+			if Input.is_action_just_pressed(&"grab") and _rod_input_ready():
 				_recall()
 			elif _wait_left <= 0.0:
 				_begin_nibbling()
@@ -200,7 +392,7 @@ func _physics_process(delta: float) -> void:
 			_step_nibbling(delta)
 		State.BITE:
 			_bite_left -= delta
-			if Input.is_action_just_pressed(&"grab"):
+			if Input.is_action_just_pressed(&"grab") and _rod_input_ready():
 				_hook()
 			elif _bite_left <= 0.0:
 				_flee(false) # se escapo sin castigo: la ventana es generosa
@@ -213,8 +405,10 @@ func _physics_process(delta: float) -> void:
 	_update_visuals(delta)
 
 
+## Tension relativa al limite del sedal MONTADO: con una caña mejor, el mismo
+## tiron chirria menos porque de verdad esta mas lejos de romper (regla 8).
 func _tension_norm() -> float:
-	return clampf(fight.tension / FightModel.SNAP_TENSION, 0.0, 1.0)
+	return clampf(fight.tension / fight.max_tension(), 0.0, 1.0)
 
 
 func _update_deck_accel(delta: float) -> void:
@@ -232,7 +426,7 @@ func _update_deck_accel(delta: float) -> void:
 
 func _cast() -> void:
 	var cam := get_viewport().get_camera_3d()
-	var dist: float = lerpf(CAST_MIN_DIST, CAST_MAX_DIST, _charge)
+	var dist: float = lerpf(CAST_MIN_DIST, _cast_max_dist(), _charge)
 	var fwd: Vector3 = -cam.global_transform.basis.z
 	var flat := Vector2(fwd.x, fwd.z).normalized() * dist
 	var origin := cam.global_position
@@ -240,6 +434,12 @@ func _cast() -> void:
 
 	state = State.WAITING
 	_wait_left = _rng.randf_range(8.0, 25.0) * clampf(1.0 - Ocean.fury * 0.06, 0.4, 1.0)
+	# El cebo recorta la espera: es el multiplicador de piezas por salida (mas
+	# ciclos en el mismo rato). La tirada del RNG se hace SIEMPRE antes, cebado
+	# o no, para que poner cebo no desvie la secuencia de la partida (regla 4).
+	var cebo_activo := cebo_puesto()
+	if cebo_activo != null:
+		_wait_left *= cebo_activo.espera_factor
 	_bobber.visible = true
 	_bobber.global_position = _tip.global_position
 	_stop_rumble()
@@ -249,6 +449,14 @@ func _cast() -> void:
 	if _camfx != null:
 		_camfx.kick_fov(4.0, 0.12, 0.0, 0.5)
 	_bend_vel += 6.0
+	if _cast_p != null and _cast_p.stream != null:
+		# Pitch ±6% como todo one-shot del repo: dos lanzamientos identicos
+		# suenan a boton de menu, no a caña. RNG global a proposito (regla 4):
+		# esto es presentacion y puede divergir entre clientes sin consecuencia,
+		# y `_rng` lleva la secuencia de la PARTIDA (espera, nibbles) — gastarle
+		# tiradas desde el audio seria contaminar logica con adorno.
+		_cast_p.pitch_scale = randf_range(0.94, 1.06)
+		_cast_p.play()
 
 	# Plop de caida donde aterriza la boya, con un vuelo corto visible.
 	get_tree().create_timer(0.45).timeout.connect(func() -> void:
@@ -272,7 +480,7 @@ func _lap_sounds(delta: float) -> void:
 	if vy > 0.35:
 		_world_p.global_position = _bobber.global_position
 		SfxLibrary.play_one(_world_pb, SfxLibrary.lap, -14.0)
-		_lap_cooldown = _rng.randf_range(0.5, 1.1)
+		_lap_cooldown = _rng_fx.randf_range(0.5, 1.1)
 
 
 # =============================================================================
@@ -281,7 +489,7 @@ func _lap_sounds(delta: float) -> void:
 
 func _begin_nibbling() -> void:
 	state = State.NIBBLING
-	hooked_species = FishSpecies.choose(Ocean.fury, _rng)
+	hooked_species = FishSpecies.choose(Ocean.fury, _rng, _cebo_sesgo())
 	_nibble_delays = plan_nibbles(_rng)
 	_nibble_index = 0
 	_nibble_timer = _nibble_delays[0]
@@ -293,7 +501,10 @@ func _step_nibbling(delta: float) -> void:
 	_lap_sounds(delta)
 
 	# Clavar durante un toque FALSO = el pez huye. Nace el juego de nervios.
-	if Input.is_action_just_pressed(&"grab"):
+	# (Con las manos llenas o la caña en el soporte, el click no es un clavado:
+	# el juego de nervios sigue solo, y si llega el mordisco sin caña en mano,
+	# el pez se ira sin castigo — soltarla de las manos fue TU apuesta.)
+	if Input.is_action_just_pressed(&"grab") and _rod_input_ready():
 		_flee(true)
 		return
 
@@ -313,7 +524,9 @@ func _step_nibbling(delta: float) -> void:
 func _do_nibble() -> void:
 	_nibble_dip = 1.0
 	_bend_vel += 2.5
-	Input.start_joy_vibration(0, 0.25, 0.0, 0.1)
+	# El rumble es el canal de la MANO: con la caña clavada no hay mano.
+	if soporte == null:
+		Input.start_joy_vibration(0, 0.25, 0.0, 0.1)
 
 
 func _flee(punished: bool) -> void:
@@ -326,9 +539,15 @@ func _flee(punished: bool) -> void:
 
 func _start_bite() -> void:
 	state = State.BITE
-	_bite_left = BITE_WINDOW
+	# La ventana la decide DONDE esta la caña: en la mano es un clic, clavada es
+	# cruzar la cubierta. Se fija aqui una sola vez — retomarla a mitad de la
+	# picada no reinicia el reloj: la apuesta ya estaba hecha.
+	_bite_left = BITE_WINDOW_SOPORTE if soporte != null else BITE_WINDOW
 	if hooked_species.is_empty():
-		hooked_species = FishSpecies.choose(Ocean.fury, _rng)
+		hooked_species = FishSpecies.choose(Ocean.fury, _rng, _cebo_sesgo())
+	# El pez se COME el cebo al morder, lo subas o te lo robe. Que perder el
+	# pez cueste tambien el cebo es lo unico que hace de gastarlo una decision.
+	_consumir_cebo()
 
 	# EL PICO MULTIMODAL, todo el mismo frame (Stardew): chomp posicional EN la
 	# boya, hundimiento total, tiron de la caña, doble pulso fuerte de rumble,
@@ -337,23 +556,28 @@ func _start_bite() -> void:
 	SfxLibrary.play_one(_world_pb, SfxLibrary.chomp, 0.0,
 		clampf(1.3 - float(hooked_species[&"weight"]) * 0.012, 0.55, 1.3))
 	_bend_vel += 5.0
-	Input.start_joy_vibration(0, 0.0, 0.9, 0.12)
-	get_tree().create_timer(0.2).timeout.connect(func() -> void:
-		if state == State.BITE:
-			Input.start_joy_vibration(0, 0.0, 0.9, 0.12))
 	_mark.visible = true
 	_mark.scale = Vector3.ONE * 0.2
 	var tw := create_tween()
 	tw.tween_property(_mark, "scale", Vector3.ONE * 1.25, 0.12).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	tw.tween_property(_mark, "scale", Vector3.ONE, 0.1)
-	if _camfx != null:
-		_camfx.kick_fov(-3.0, 0.08, BITE_WINDOW, 0.3)
-	_hud.show_bite()
+	# Rumble, FOV y el flash del HUD son canales de PRIMERA PERSONA: con la
+	# caña clavada el aviso es el del mundo (chomp 3D, "!", la caña doblandose
+	# en la borda) — meterte un punch de camara por una caña que no sostienes
+	# seria feedback mintiendo de canal.
+	if soporte == null:
+		Input.start_joy_vibration(0, 0.0, 0.9, 0.12)
+		get_tree().create_timer(0.2).timeout.connect(func() -> void:
+			if state == State.BITE and soporte == null:
+				Input.start_joy_vibration(0, 0.0, 0.9, 0.12))
+		if _camfx != null:
+			_camfx.kick_fov(-3.0, 0.08, BITE_WINDOW, 0.3)
+		_hud.show_bite()
 
 
 func _hook() -> void:
 	state = State.FIGHT
-	fight.start(hooked_species, _rng)
+	fight.start(hooked_species, _rng, tier)
 	_reel_rearm = true # recoger exige un clic NUEVO: clavar no es recoger
 	_prev_pull = fight.pull_dir
 	_mark.visible = false
@@ -382,6 +606,9 @@ func _step_fight(delta: float) -> void:
 	if _reel_rearm and not Input.is_action_pressed(&"grab"):
 		_reel_rearm = false
 	var reeling := Input.is_action_pressed(&"grab") and not _reel_rearm
+	# Lo ve la presentacion: el carrete gira con la MISMA señal con la que suena
+	# la cama de recogida y avanza la lucha (regla 8: ningun canal va por libre).
+	_reeling = reeling
 
 	fight.step(delta, reeling, counter, deck_accel_y)
 	var norm := _tension_norm()
@@ -389,7 +616,7 @@ func _step_fight(delta: float) -> void:
 	# Cambios de fase del pez: el tiron arranca con splash 3D EN la boya (la
 	# tripulacion oye donde y cuanto lucha); la pausa es SILENCIO — la señal.
 	if fight.pull_dir != _prev_pull:
-		if fight.pull_dir != FightModel.Pull.NONE and _rng.randf() < 0.6:
+		if fight.pull_dir != FightModel.Pull.NONE and _rng_fx.randf() < 0.6:
 			_world_p.global_position = _bobber.global_position
 			SfxLibrary.play_varied(_world_pb, SfxLibrary.splashes, "splash",
 				-8.0 + float(hooked_species[&"pull"]) * 6.0, 1.15)
@@ -399,6 +626,27 @@ func _step_fight(delta: float) -> void:
 	_hud.update_fight(fight.pull_dir, not fight.is_pulling(), norm,
 		fight.progress, fight.is_spit_warning(), reeling)
 
+	# --- acompañamiento fisico del tira-y-afloja ------------------------------
+	var pull_str: float = float(hooked_species.get(&"pull", 0.3)) 		* (FightModel.TIRED_PULL_FLOOR + (1.0 - FightModel.TIRED_PULL_FLOOR) * fight.stamina)
+	_lean_goal = lean_target_for(fight.pull_dir,
+		Input.is_action_pressed(&"move_left"), Input.is_action_pressed(&"move_right"),
+		pull_str)
+
+	# EL PEZ ESCAPANDOSE SE SIENTE EN LA CAMARA: mientras corre con el sedal te
+	# ARRASTRA hacia su lado (traslacion pura, 4.5 cm max). Con la contra bien
+	# puesta el tiron cae a un tercio: recomponerte es literalmente contrar.
+	if _camfx != null:
+		if fight.is_pulling():
+			var fish_side: float = 1.0 if fight.pull_dir == FightModel.Pull.LEFT else -1.0
+			var countered := (fight.pull_dir == FightModel.Pull.LEFT 				and Input.is_action_pressed(&"move_right")) 				or (fight.pull_dir == FightModel.Pull.RIGHT 				and Input.is_action_pressed(&"move_left"))
+			var tug: float = pull_str * (0.35 if countered else 1.0)
+			# El tiron respira con el forcejeo del pez, no es un offset muerto.
+			tug *= 1.0 + 0.3 * sin(Time.get_ticks_msec() * 0.009)
+			_camfx.set_drag(Vector2(-fish_side * 0.055 * tug, -0.012 * tug))
+		else:
+			_camfx.set_drag(Vector2.ZERO)
+
+	_haul_bed(delta, reeling)
 	_click_train(delta, norm)
 	_creak(delta, norm, counter)
 	_fight_rumble(delta, norm)
@@ -407,7 +655,7 @@ func _step_fight(delta: float) -> void:
 	var origin := Vector2(cam.global_position.x, cam.global_position.z)
 	# La distancia de la boya ES el progreso: recoger la acerca, y el pez
 	# corriendo sin contra se la lleva — perder sedal se VE, no solo se oye.
-	var target_dist: float = lerpf(CAST_MAX_DIST, 2.5, fight.progress)
+	var target_dist: float = lerpf(_cast_max_dist(), 2.5, fight.progress)
 	var dir_out := (_cast_point - origin).normalized()
 	if dir_out == Vector2.ZERO:
 		dir_out = Vector2.DOWN
@@ -426,6 +674,24 @@ func _ack_counter(side: float) -> void:
 	_lateral_vel += side * 5.0
 	SfxLibrary.play_varied(_reel_pb, SfxLibrary.reel_clicks, "click", -6.0)
 	Input.start_joy_vibration(0, 0.2, 0.0, 0.05)
+
+
+## La cama del forcejeo mientras traes al pez. Suena SOLO mientras recoges de
+## verdad: si sonara tambien en las pausas dejaria de significar nada (regla 8,
+## el mismo motivo por el que la pausa del pez es silencio). Cada entrada
+## arranca en un punto distinto del loop — el jugador suelta y vuelve a apretar
+## muchas veces por lucha, y empezar siempre por el mismo medio segundo delata
+## el archivo.
+func _haul_bed(delta: float, reeling: bool) -> void:
+	if _haul_p == null or _haul_p.stream == null:
+		return
+	if reeling and not _haul_p.playing:
+		_haul_p.play(randf() * maxf(_haul_p.stream.get_length() - 1.0, 0.0))
+	_haul_p.global_position = _bobber.global_position
+	_haul_p.volume_db = lerpf(_haul_p.volume_db, HAUL_DB if reeling else -60.0,
+		clampf(10.0 * delta, 0.0, 1.0))
+	if _haul_p.playing and not reeling and _haul_p.volume_db < -50.0:
+		_haul_p.stop()
 
 
 ## El click del freno: la tension exacta, decodificable como un contador Geiger.
@@ -449,7 +715,7 @@ func _click_train(delta: float, norm: float) -> void:
 			if _click_cooldown <= 0.0:
 				SfxLibrary.play_varied(_reel_pb, SfxLibrary.reel_clicks, "click",
 					-4.0, 1.0 + 0.2 * norm)
-				_click_cooldown = (1.0 / rate) * _rng.randf_range(0.85, 1.15)
+				_click_cooldown = (1.0 / rate) * _rng_fx.randf_range(0.85, 1.15)
 
 
 ## El crujido pre-rotura (stick-slip): la rampa que convierte la rotura en
@@ -467,7 +733,7 @@ func _creak(delta: float, norm: float, counter: FightModel.Pull) -> void:
 	# al rumble para quien juega sin mando.
 	var gain: float = -10.0 + t * 6.0
 	SfxLibrary.play_varied(_reel_pb, SfxLibrary.creak_pulses, "creak", gain, 1.0 + 0.3 * norm)
-	_creak_cooldown = (1.0 / creak_rate) * _rng.randf_range(0.6, 1.4)
+	_creak_cooldown = (1.0 / creak_rate) * _rng_fx.randf_range(0.6, 1.4)
 
 
 ## Regla Sea of Thieves: vibra solo cuando algo va mal. Pausas = silencio total.
@@ -530,23 +796,41 @@ func _on_escape() -> void:
 
 
 func _land() -> void:
-	var fish: Fish = fish_scene.instantiate()
-	get_tree().current_scene.add_child(fish)
-	fish.setup(hooked_species)
-
 	var water := _bobber_rest_pos()
-	fish.global_position = water
 	var to_player := _player.global_position - water
 	var flat := Vector3(to_player.x, 0, to_player.z)
-	fish.linear_velocity = flat * 1.1 + Vector3.UP * (4.5 + flat.length() * 0.45)
-	fish.angular_velocity = Vector3(_rng.randf_range(-6, 6), _rng.randf_range(-6, 6), _rng.randf_range(-6, 6))
+	var vel := flat * 1.1 + Vector3.UP * (4.5 + flat.length() * 0.45)
+	# El tumbo del pez es PRESENTACION: sale del RNG de efectos, no del de la
+	# partida. Si gastara tiradas de `_rng`, cualquier cambio futuro en el
+	# audio o el feel desplazaria la secuencia de especies (regla 4).
+	var giro := Vector3(_rng_fx.randf_range(-6, 6), _rng_fx.randf_range(-6, 6),
+		_rng_fx.randf_range(-6, 6))
+
+	# En red el cuerpo lo pare el HOST y llega en 80-150 ms — o sea, DENTRO
+	# del hueco de 250 ms que el climax ya tenia reservado para el jingle. La
+	# latencia se esconde en un agujero que el diseño ya habia hecho.
+	#
+	# Y la ESPECIE viaja decidida: la eligio este cliente al clavar y lleva
+	# treinta segundos enseñandola en el HUD. Si el host la re-sorteara, el
+	# jugador habria peleado media pelea contra un Fletan para sacar una
+	# Sardina — feedback que mintio (regla 8). El host ratifica, no re-decide.
+	var fish: Fish = null
+	if not Net.pedir_pez(FishSpecies.SPECIES.find(hooked_species), water, vel, giro):
+		fish = fish_scene.instantiate()
+		get_tree().current_scene.add_child(fish)
+		fish.setup(hooked_species)
+		fish.global_position = water
+		fish.linear_velocity = vel
+		fish.angular_velocity = giro
 
 	# El climax encadenado: freeze de 70 ms al romper el agua -> splash 3D ->
 	# jingle a +250 ms (nunca solapado) -> el thud lo pone el pez al aterrizar.
+	# NO espera al pez: es tuyo y suena ya.
 	_freeze_left = 0.07
 	_world_p.global_position = water
 	SfxLibrary.play_varied(_world_pb, SfxLibrary.splashes, "splash", 0.0)
-	var rarity: int = 2 if fish.value >= 400 else (1 if fish.value >= 90 else 0)
+	var valor := int(hooked_species.get(&"value", 0))
+	var rarity: int = 2 if valor >= 400 else (1 if valor >= 90 else 0)
 	get_tree().create_timer(0.25).timeout.connect(func() -> void:
 		SfxLibrary.play_one(_ui_pb, SfxLibrary.jingles[rarity], -4.0))
 	# Rumble alegre: doble pulso debil (canal haptico del climax, del critico).
@@ -555,10 +839,11 @@ func _land() -> void:
 		Input.start_joy_vibration(0, 0.4, 0.0, 0.1))
 	if _camfx != null:
 		_camfx.add_trauma(0.35)
-	_hud.show_result("¡%s  ·  %.0f kg!" % [fish.species_name, fish.weight_kg],
-		Color(1.0, 0.85, 0.35))
+	_hud.show_result("¡%s  ·  %.0f kg!" % [String(hooked_species.get(&"name", "?")),
+		float(hooked_species.get(&"weight", 0.0))], Color(1.0, 0.85, 0.35))
 
-	fish_landed.emit(fish)
+	if fish != null:
+		fish_landed.emit(fish)
 	_recall()
 
 
@@ -571,15 +856,254 @@ func _recall(keep_adrift: bool = false) -> void:
 	_mark.visible = false
 	_hud.hide_all()
 	_nibble_dip = 0.0
+	if _camfx != null:
+		_camfx.set_drag(Vector2.ZERO)
 	_stop_rumble()
 	_buzz_p.stop()
 	_buzz_p.volume_db = -60.0
+	# La cama de recogida muere con la lucha: se acabo el pez, se acabo el
+	# forcejeo. Pasa por aqui la rotura, la escupida y la captura.
+	if _haul_p != null:
+		_haul_p.stop()
+		_haul_p.volume_db = -60.0
 	_set_player_lock(false)
 
 
 func _set_player_lock(locked: bool) -> void:
 	if _player != null:
 		_player.hands_busy = locked
+
+
+## Con algo en las manos no se toca la caña: primero soltalo o colgalo. Es el
+## contrato del porteo (docs/PORTEO.md) — el deficit de manos es el diseño.
+func _hands_free() -> bool:
+	return _player == null or _player.hands_used == 0
+
+
+## La caña solo escucha el click con las manos libres Y en la mano. Clavada en
+## el soporte pesca sola (espera, nibbles, mordisco), pero no se maneja a
+## distancia: para clavar el pez hay que RETOMARLA (E en el soporte), y la
+## ventana de picada no espera a nadie.
+func _rod_input_ready() -> bool:
+	return soporte == null and _hands_free()
+
+
+# =============================================================================
+#  El soporte de borda: la caña clavada pesca sola
+# =============================================================================
+
+## La caña se guarda del viewmodel en dos casos: clavada en el soporte, o con
+## las manos cargadas por el porteo (deuda declarada de PORTEO.md, saldada
+## aqui). Durante la LUCHA las manos estan "llenas" pero de la propia caña
+## (input_captured): ahi se ve, faltaria mas.
+func _guardada() -> bool:
+	if soporte != null:
+		return true
+	return _player != null and _player.hands_used > 0 and not _player.input_captured
+
+
+## De donde sale el sedal: de la punta en tu mano, o de la punta de la caña
+## clavada en la borda.
+func _tip_pos() -> Vector3:
+	if soporte != null and soporte.has_method(&"punta"):
+		var punta := soporte.call(&"punta") as Node3D
+		if punta != null:
+			return punta.global_position
+	return _tip.global_position
+
+
+func esta_clavada() -> bool:
+	return soporte != null
+
+
+## Clavar la caña en un soporte de borda: libera las manos sin dejar de
+## pescar. Solo en reposo o con el sedal echado — a mitad de un gesto (carga,
+## picada, lucha) la caña es tuya o de nadie.
+func clavar_en(nuevo_soporte: Node3D) -> bool:
+	if soporte != null or nuevo_soporte == null:
+		return false
+	if not (state == State.IDLE or state == State.WAITING or state == State.NIBBLING):
+		return false
+	soporte = nuevo_soporte
+	if soporte.has_method(&"ocupar"):
+		soporte.call(&"ocupar")
+	_stop_rumble()
+	return true
+
+
+## Retomarla del soporte. Si hay picada en curso, la ventana sigue corriendo:
+## retomar y clavar el pez en el tiempo que queda ES el minijuego de haberla
+## dejado sola.
+func retomar() -> void:
+	if soporte == null:
+		return
+	if soporte.has_method(&"liberar"):
+		soporte.call(&"liberar")
+	soporte = null
+
+
+# =============================================================================
+#  El cebo: compra tiempo y atencion, nunca peces que el mar no da
+# =============================================================================
+
+## El cebo puesto AHORA, o null si el anzuelo va desnudo. Las cargas mandan:
+## un tipo sin cargas es exactamente lo mismo que no llevar cebo.
+func cebo_puesto() -> TipoCebo:
+	return cebo if cebo_cargas > 0 else null
+
+
+func _cebo_sesgo() -> float:
+	var c := cebo_puesto()
+	return c.sesgo if c != null else 0.0
+
+
+func _consumir_cebo() -> void:
+	if cebo_cargas > 0:
+		cebo_cargas -= 1
+		cebo_cambiado.emit()
+
+
+## Cebar la caña desde el cubo. Devuelve cuantas cargas se han cogido de
+## verdad, para que el cubo descuente EXACTAMENTE eso (cambiar de cebo tira lo
+## que quedaba puesto: no se mezclan masilla y cebo vivo en el mismo anzuelo).
+func cebar(tipo: TipoCebo, disponibles: int) -> int:
+	if tipo == null or disponibles <= 0:
+		return 0
+	if tipo != cebo:
+		cebo = tipo
+		cebo_cargas = 0
+	var cogidas: int = mini(CEBO_CARGAS_MAX - cebo_cargas, disponibles)
+	if cogidas <= 0:
+		return 0
+	cebo_cargas += cogidas
+	cebo_cambiado.emit()
+	return cogidas
+
+
+# =============================================================================
+#  El aparejo montado (tiers de caña)
+# =============================================================================
+
+func _cast_max_dist() -> float:
+	return CAST_MAX_DIST * (tier.cast_factor if tier != null else 1.0)
+
+
+## Monta otra caña. La lucha en curso NO cambia de sedal: FightModel copio los
+## numeros al clavar — cambiar de aparejo con el pez enganchado seria trampa.
+func set_tier(next: RodTier) -> void:
+	if next == null:
+		return
+	tier = next
+	_apply_tier()
+
+
+## Cicla el arbol de aparejos (herramienta de debug/validacion, tecla C en el
+## HUD). Solo con la caña en reposo, por el mismo contrato que set_tier.
+func cycle_tier() -> void:
+	if state != State.IDLE:
+		return
+	var index := TIER_PATHS.find(tier.resource_path if tier != null else "")
+	set_tier(load(TIER_PATHS[(index + 1) % TIER_PATHS.size()]) as RodTier)
+
+
+## La mejora se VE (regla del arbol: piezas, no "+5%"): la empuñadura DELANTERA
+## toma el color del tier.
+##
+## Es la de delante y no la de atras porque el brazo del viewmodel es una
+## capsula de 7 cm de radio que se traga todo lo que quede por detras de la
+## mano: pintar la trasera era pintar algo que el jugador no ve nunca. La malla
+## se llama `Grip` dentro del GLB (`tools/build_fishing_rod.py`), asi que se
+## busca en profundidad y no como hijo directo del pivote.
+func _apply_tier() -> void:
+	if tier == null:
+		return
+	var grip := _rod_pivot.find_child("Grip", true, false) as MeshInstance3D
+	if grip == null:
+		return
+	# Un GLB trae su material en la malla, no como override: sin este respaldo
+	# el tintado se apagaria EN SILENCIO al cambiar de primitivas a arte propio.
+	var base: Material = grip.get_surface_override_material(0)
+	if base == null and grip.mesh != null:
+		base = grip.mesh.surface_get_material(0)
+	var mat := base as StandardMaterial3D
+	if mat != null:
+		mat = mat.duplicate()
+		mat.albedo_color = tier.accent_color
+		grip.set_surface_override_material(0, mat)
+
+
+## Cachea el rig del doblez: los huesos, el eje sobre el que curva cada uno, y
+## las dos conversiones de espacio que hacen falta para saber DONDE acaba la
+## punta cuando el cuerpo se arquea.
+##
+## Todo esto es fijo (la caña rueda dentro del pivote una sola vez y el
+## esqueleto cuelga del modelo), asi que se calcula aqui y no cada frame.
+func _setup_doblez(modelo: Node3D) -> void:
+	var encontrados := modelo.find_children("*", "Skeleton3D", true, false)
+	if encontrados.is_empty():
+		return
+	_skel = encontrados[0] as Skeleton3D
+	for i in BEND_BONE_WEIGHTS.size():
+		var idx := _skel.find_bone("Cania_%d" % i)
+		if idx < 0:
+			# Modelo viejo o rig renombrado: mejor caña tiesa que caña rota.
+			_skel = null
+			return
+		_huesos.append(idx)
+
+	_esq_a_pivote = _rod_pivot.global_transform.affine_inverse() * _skel.global_transform
+	var a_esqueleto := _esq_a_pivote.affine_inverse()
+	# El doblez rigido es un giro sobre el eje X del pivote. Los huesos tienen
+	# que curvarse sobre ESE MISMO eje o la caña se doblaria hacia un lado.
+	var eje_esq := (a_esqueleto.basis * Vector3.RIGHT).normalized()
+	for idx in _huesos:
+		var rest := _skel.get_bone_global_rest(idx)
+		_eje_hueso.append((rest.basis.inverse() * eje_esq).normalized())
+	# La punta, en espacio del esqueleto y en reposo. Con la pose del ultimo
+	# hueso encima sale donde esta la punta AHORA — la misma cuenta que hace la
+	# GPU al deformar la malla, sin duplicar ninguna formula.
+	_punta_esq = a_esqueleto * Vector3(0.0, _tip.position.y, 0.0)
+	_rest_punta_inv = _skel.get_bone_global_rest(_huesos[_huesos.size() - 1]).affine_inverse()
+
+
+## Reparte el doblez entre la muñeca (girar la caña entera) y el cuerpo
+## (curvarse), y deja el nodo `Tip` donde el sedal tiene que nacer.
+##
+## Es lo unico que mueve `_rod_pivot.rotation.x`: quien quiera añadir temblor o
+## latigazo, que lo sume DESPUES de llamar aqui.
+func _aplicar_doblez(bend: float) -> void:
+	if _skel == null:
+		_rod_pivot.rotation.x = -bend
+		return
+	_rod_pivot.rotation.x = -bend * BEND_RIGID_SHARE
+	var curva := bend * (1.0 - BEND_RIGID_SHARE) * BEND_CURVE_GAIN
+	for i in _huesos.size():
+		_skel.set_bone_pose_rotation(_huesos[i],
+			Quaternion(_eje_hueso[i], -curva * BEND_BONE_WEIGHTS[i]))
+	# La punta la dice el HUESO, no una copia de la curva: si mañana cambian los
+	# pesos o el numero de huesos, el sedal sigue saliendo de donde acaba la
+	# caña. Se escribe en local (el pivote ya gira por su cuenta).
+	var piel := _skel.get_bone_global_pose(_huesos[_huesos.size() - 1]) * _rest_punta_inv
+	_tip.position = _esq_a_pivote * (piel * _punta_esq)
+
+
+## El carrete gira mientras recoges, y solo mientras recoges.
+##
+## Es la unica pieza movil de la caña, o sea el unico sitio donde el jugador ve
+## lo que estan haciendo sus manos: sin esto se spamea el clic y el aparejo se
+## queda quieto, que es justo la sensacion de "el juego no me esta oyendo". El
+## eje de cada pieza se compone sobre su pose de fabrica y en el espacio del
+## PADRE (la manivela sale del GLB con su propia rotacion; girarla por su eje
+## local la mandaria de paseo).
+func _spin_reel(delta: float) -> void:
+	if not _reeling or state != State.FIGHT:
+		return
+	var factor: float = tier.reel_factor if tier != null else 1.0
+	_reel_angle += TAU * REEL_TURNS_PER_SECOND * factor * delta
+	if _handle != null:
+		_handle.transform.basis = Basis(Vector3.RIGHT, _reel_angle) * _handle_base
+	if _rotor != null:
+		_rotor.transform.basis = Basis(Vector3.UP, _reel_angle * REEL_GEAR_RATIO) * _rotor_base
 
 
 func _exit_tree() -> void:
@@ -593,11 +1117,23 @@ func _exit_tree() -> void:
 func _update_visuals(delta: float) -> void:
 	_prev_bobber_y = _bobber.global_position.y
 
+	# La caña se guarda sola del viewmodel (clavada o porteando); la boya, el
+	# sedal y el "!" son top_level y siguen viviendo en el mundo. El brazo
+	# cuelga del pivote, asi que se guarda con ella.
+	_rod_pivot.visible = not _guardada()
+	# Clavada, el soporte es su cuerpo: le presta el muelle real del doblez —
+	# la señal de estacion sale de la MISMA fisica que doblaria tus manos.
+	if soporte != null and soporte.has_method(&"set_doblado"):
+		soporte.call(&"set_doblado", _bend)
+
 	# Hitstop LOCAL: la presentacion se congela (la camara y el raton JAMAS).
 	if _freeze_left > 0.0:
-		_rod_pivot.rotation.x = -_bend + sin(Time.get_ticks_msec() * 0.08) * 0.01
+		_aplicar_doblez(_bend)
+		_rod_pivot.rotation.x += sin(Time.get_ticks_msec() * 0.08) * 0.01
 		_draw_line()
 		return
+
+	_spin_reel(delta)
 
 	# Muelle sub-amortiguado (K=120, D=12): la caña tiene masa, no un lerp.
 	# El follow-through al soltar tension sale gratis: 1-2 oscilaciones.
@@ -620,9 +1156,18 @@ func _update_visuals(delta: float) -> void:
 	_bend += _bend_vel * delta
 	_lateral_vel += ((0.0 - _lateral) * 140.0 - _lateral_vel * 10.0) * delta
 	_lateral += _lateral_vel * delta
+	# El lean persigue su objetivo con muelle propio (mas blando que el kick):
+	# el forcejeo se ve pesado, no electrico.
+	if state != State.FIGHT:
+		_lean_goal = 0.0
+	_lean_vel += ((_lean_goal - _lean) * 90.0 - _lean_vel * 11.0) * delta
+	_lean += _lean_vel * delta
 
-	_rod_pivot.rotation.x = -_bend
-	_rod_pivot.rotation.z = _lateral * 0.03
+	_aplicar_doblez(_bend)
+	_rod_pivot.rotation.z = _lateral * 0.03 + _lean
+	# La caña ADEMAS se desplaza hacia el lado del forcejeo: manos y mango se
+	# van con ella — el acompañamiento que se ve incluso sin mirar la punta.
+	_rod_pivot.position.x = _lean * 0.24
 	if _snap_flash > 0.0:
 		_rod_pivot.rotation.x += _snap_flash * sin(_snap_flash * 40.0) * 0.3
 
@@ -680,7 +1225,7 @@ func _draw_line() -> void:
 	# Trozo de sedal colgando tras la rotura: la permanencia del fallo.
 	if _remnant_left > 0.0:
 		_remnant_left -= get_physics_process_delta_time()
-		var a := _tip.global_position
+		var a := _tip_pos()
 		var sway := sin(Time.get_ticks_msec() * 0.004) * 0.06
 		im.surface_begin(Mesh.PRIMITIVE_LINE_STRIP)
 		for i in 5:
@@ -691,7 +1236,7 @@ func _draw_line() -> void:
 
 	if not _bobber.visible or _adrift_left > 0.0 or state == State.IDLE or state == State.CASTING:
 		return
-	var a := _tip.global_position
+	var a := _tip_pos()
 	var b := _bobber.global_position
 	var slack: float = 1.2
 	if state == State.FIGHT:
@@ -710,16 +1255,30 @@ func _draw_line() -> void:
 
 ## Linea de estado para el HUD de debug (el juego real no la enseña).
 func debug_line() -> String:
+	# Clavada, el gesto es OTRO: primero E en el soporte para retomarla. Decir
+	# "clic" mientras cuelga de la borda seria el HUD mintiendo de canal, que es
+	# justo lo que el resto del sistema evita (regla 8) — aqui sale gratis.
+	var clavada := soporte != null
+	var c := cebo_puesto()
+	var cebada := "  ·  %s x%d" % [c.nombre, cebo_cargas] if c != null else "  ·  sin cebo"
 	match state:
 		State.IDLE:
-			return "caña lista  ·  clic: lanzar"
+			if clavada:
+				return "%s clavada en la borda%s  ·  E: retomarla" % \
+					[tier.tier_name if tier != null else "caña", cebada]
+			return "%s lista%s  ·  clic: lanzar  ·  C: cambiar caña" % \
+				[tier.tier_name if tier != null else "caña", cebada]
 		State.CASTING:
 			return "cargando  %d%%" % int(_charge * 100)
 		State.WAITING:
-			return "esperando  (%.0f s)  ·  mar %.2f m/s2" % [_wait_left, absf(deck_accel_y)]
+			return "esperando  (%.0f s)%s%s  ·  mar %.2f m/s2" % [
+				_wait_left, cebada, "  ·  clavada" if clavada else "",
+				absf(deck_accel_y)]
 		State.NIBBLING:
 			return "algo ronda la boya..."
 		State.BITE:
+			if clavada:
+				return "[b]¡PICA![/b]  E para retomarla, luego clavar  (%.1f s)" % _bite_left
 			return "[b]¡PICA![/b]  clic para clavar  (%.1f s)" % _bite_left
 		State.FIGHT:
 			var dir := "<- tira IZQ" if fight.pull_dir == FightModel.Pull.LEFT else \

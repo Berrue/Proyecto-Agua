@@ -97,6 +97,36 @@ func spawn(origin: Vector2, direction: Vector2, amplitude: float, celerity: floa
 	return -1
 
 
+## El inverso exacto de `pack()`: reconstruye la tabla de eventos desde los
+## tres PackedVector4Array. Lo usa la red para que quien se une a mitad de
+## tsunami vea la MISMA ola que los demas — no una nueva, la misma, con su
+## `t0` original intacto.
+func unpack(datos: Array) -> void:
+	if datos.size() < 3:
+		return
+	var a := datos[0] as PackedVector4Array
+	var b := datos[1] as PackedVector4Array
+	var c := datos[2] as PackedVector4Array
+	for i in events.size():
+		var e := events[i]
+		if i >= a.size() or i >= b.size() or i >= c.size():
+			e.active = false
+			continue
+		e.origin = Vector2(a[i].x, a[i].y)
+		e.direction = Vector2(a[i].z, a[i].w)
+		if e.direction.length_squared() < 1e-6:
+			e.direction = Vector2(0.0, 1.0)
+		e.direction = e.direction.normalized()
+		e.amplitude = b[i].x
+		e.celerity = maxf(b[i].y, 0.1)
+		e.width = maxf(b[i].z, 1.0)
+		e.t0 = b[i].w
+		e.lead = c[i].x
+		e.spread = c[i].y
+		e.depression = clampf(c[i].z, 0.0, 1.0)
+		e.active = c[i].w > 0.5
+
+
 func clear_all() -> void:
 	for e in events:
 		e.active = false

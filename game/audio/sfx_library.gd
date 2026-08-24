@@ -1,11 +1,17 @@
 extends Node
 
-## AUTOLOAD `SfxLibrary` — fabrica de sonidos 100% procedurales.
+## AUTOLOAD `SfxLibrary` — los sonidos de la caña.
 ##
-## No tenemos assets de audio ni artista de sonido, y no hacen falta: todos los
-## sonidos de la caña se SINTETIZAN aqui al arrancar (~4 s de audio total,
-## generacion instantanea) como AudioStreamWAV de 16 bits a 22050 Hz. Licencia
-## limpia garantizada: lo fabricamos nosotros.
+## Casi todos se SINTETIZAN aqui al arrancar (~4 s de audio total, generacion
+## instantanea) como AudioStreamWAV de 16 bits a 22050 Hz. Eso es de ANTES de
+## que la regla 10 fijara "el audio no es procedural, se genera con ElevenLabs":
+## es la excepcion conocida del repo, no el patron a imitar.
+##
+## Lo que entra NUEVO ya va por la regla: `cast_whip` (el latigazo al lanzar) y
+## `haul_loop` (la cama de la recogida) son .wav de ElevenLabs horneados en
+## `game/audio/fishing/`, con su fila en THIRD_PARTY.md. Conviven sin friccion
+## con lo sintetizado porque play_one() y play_varied() solo piden un
+## AudioStreamWAV, no de donde salio.
 ##
 ## Regla de la critica: NADA de AudioStreamGenerator en vivo desde GDScript (los
 ## docs lo desaconsejan — cracking). Todo pre-generado; los trenes de clicks se
@@ -17,6 +23,18 @@ extends Node
 ## repetir la variante anterior — o suena a metralleta de alarma.
 
 const RATE := 22050
+
+## El latigazo del lanzamiento (ElevenLabs, ver THIRD_PARTY.md). Por ruta y no
+## con preload(): si el asset falta o se renombra, un autoload con preload roto
+## no PARSEA y se lleva el juego entero por delante; asi solo avisa en consola
+## — y que este cargado de verdad lo cubre `tests/fishing_tests.tscn`.
+const CAST_WHIP_PATH := "res://game/audio/fishing/latigazo_lanzamiento.wav"
+
+## La cama de la recogida: 9,5 s de forcejeo en el agua, cerrados en loop con
+## un wrap-crossfade de 0,5 s (el mismo proceso que las camas de clima,
+## docs/CLIMA.md §5). El NIVEL de mezcla no va horneado en el .wav sino en
+## FishingRod.HAUL_DB — si no, diseño pelea contra el archivo.
+const HAUL_LOOP_PATH := "res://game/audio/fishing/recogida_loop.wav"
 
 ## Ritmo del tren de clicks del freno por tension normalizada. Silencio bajo
 ## 0.3: el silencio ES la señal de "vas bien" (regla Sea of Thieves).
@@ -37,6 +55,8 @@ var snap: AudioStreamWAV ## crack + twang Karplus-Strong + thump
 var thud: AudioStreamWAV ## pez contra la cubierta
 var lap: AudioStreamWAV ## boya en reposo
 var jingles: Array[AudioStreamWAV] = [] ## captura: comun/raro/epico
+var cast_whip: AudioStreamWAV ## latigazo al lanzar (ElevenLabs, mono 48 kHz)
+var haul_loop: AudioStreamWAV ## cama de la recogida (ElevenLabs, loop mono)
 
 var _last_variant: Dictionary = {}
 
@@ -57,6 +77,13 @@ func _ready() -> void:
 	thud = _make_thud()
 	lap = _make_lap()
 	jingles = [_make_jingle(3), _make_jingle(4), _make_jingle(5)]
+
+	cast_whip = load(CAST_WHIP_PATH) as AudioStreamWAV
+	if cast_whip == null:
+		push_warning("SfxLibrary: falta el latigazo de lanzamiento (%s)" % CAST_WHIP_PATH)
+	haul_loop = load(HAUL_LOOP_PATH) as AudioStreamWAV
+	if haul_loop == null:
+		push_warning("SfxLibrary: falta la cama de recogida (%s)" % HAUL_LOOP_PATH)
 
 
 ## Crea buses si faltan: Master(limiter) <- Reel, SFX. Idempotente.

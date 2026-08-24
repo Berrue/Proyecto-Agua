@@ -52,6 +52,19 @@ const ACT_NAMES: Dictionary = {
 ## Cuanto tarda la cresta en llegar desde que se lanza.
 @export var lead_seconds: float = 95.0
 
+@export_group("Umbrales de acto")
+## La RETIRADA arranca cuando faltan retreat_seconds() * este factor para el
+## impacto: el acto dura lo que dura la retirada DE ESE TIER, no un numero fijo.
+@export var retreat_act_factor: float = 1.5
+## Segundos antes de la cresta en que RETIRADA pasa a AVISO (la linea blanca en
+## el horizonte). Numero de playtest: mas corto = menos margen para asegurarse.
+@export var warning_seconds: float = 8.0
+## Segundos despues de la cresta que siguen contando como IMPACTO.
+@export var impact_tail_seconds: float = 6.0
+## Segundos despues de la cresta en que termina la RESACA (y se reinicia el
+## ciclo si `loop` esta activo). La RESACA es sagrada: recuento y risas.
+@export var aftermath_seconds: float = 25.0
+
 @export_group("Mar")
 @export var fury_calm: float = 2.5
 @export var fury_storm: float = 7.5
@@ -88,26 +101,65 @@ func _ready() -> void:
 	_environment = get_node_or_null(environment_path) as WorldEnvironment
 	if _environment != null and _environment.environment != null:
 		_base_fog = _environment.environment.fog_density
-	if autostart:
+	# En un cliente el mar lo escribe el host: arrancar aca llamaria a
+	# `clear_events()` + `set_fury_immediate()` ANTES incluso de que haya
+	# conexion, y despues pisaria el goteo cada tick.
+	if autostart and not _es_cliente():
 		start()
+
+
+## Cede el mar al host SIN tocar nada global. No se puede usar `stop()`: llama
+## a `Ocean.clear_events()` y borraria la tabla de eventos que el paquete de
+## bienvenida acaba de plantar — o sea que unirse a mitad de tsunami borraria
+## el tsunami.
+func ceder_al_host() -> void:
+	_running = false
+
+
+func _es_cliente() -> bool:
+	return Net != null and Net.rol == Net.Rol.CLIENTE
+
+
+## Limpia la tabla de eventos POR LA VIA REPLICADA. Un `Ocean.clear_events()`
+## pelado desde la escena solo borra la copia local: el host limpiaba la suya
+## al reiniciar el bucle y el cliente se quedaba con el evento viejo marcado
+## activo. Como su cresta ya habia pasado, no aportaba altura y nadie lo
+## notaba... hasta que los DOS slots quedaban quemados y, del tercer tsunami
+## en adelante, el cliente veia MAR PLANO bajo un barco que subia diecinueve
+## metros. En solitario `pedir_debug` devuelve false y esto es lo de siempre.
+func _limpiar_mar() -> void:
+	if not Net.pedir_debug(Net.Debug.LIMPIAR, 0.0):
+		Ocean.clear_events()
 
 
 func start() -> void:
 	_elapsed = 0.0
 	_launched = false
 	_running = true
-	Ocean.clear_events()
+	_limpiar_mar()
 	Ocean.set_fury_immediate(fury_calm)
+	Ocean.rain_scale = 1.0
 	_set_act(Act.CALMA)
 
 
 func stop() -> void:
 	_running = false
-	Ocean.clear_events()
+	_limpiar_mar()
+	# Si el director muere a mitad de RETIRADA, la lluvia no puede quedarse
+	# cortada para siempre: el lanzador manual hereda un clima sano.
+	Ocean.rain_scale = 1.0
 
 
 func _physics_process(delta: float) -> void:
 	if not _running:
+		return
+	# El guard tiene que estar AQUI y no solo en `Net`: los autoloads procesan
+	# ANTES que `current_scene`, asi que `_update_sea()` es la ULTIMA escritura
+	# de `Ocean.fury` y `rain_scale` de cada tick y le gana siempre al
+	# `_estado_mar` que acaba de llegar. Un guard puesto solo en la red da test
+	# verde y falla en partida.
+	if _es_cliente():
+		_running = false
 		return
 	_elapsed += delta
 
@@ -133,7 +185,11 @@ func _launch() -> void:
 	# fijo el LEVIATAN daria MENOS margen real que el MURO. Se alarga en
 	# proporcion para que la escalada sea de tamaño y no de injusticia.
 	var reach: float = lead_seconds * sqrt(tier.size_multiplier)
-	Ocean.spawn_tsunami_tier(here, from_direction_deg, reach, tier)
+	# En red la ola la reparte el host con un `t0` explicito, para que las seis
+	# maquinas evaluen LA MISMA onda y el aviso no mienta en cinco pantallas.
+	# En solitario, `pedir_tsunami` devuelve false y esto es lo de siempre.
+	if not Net.pedir_tsunami(here, from_direction_deg, reach, tier):
+		Ocean.spawn_tsunami_tier(here, from_direction_deg, reach, tier)
 	print("Tsunami lanzado: ", tier.summary())
 	tier_launched.emit(tier)
 
@@ -158,22 +214,22 @@ func _update_act() -> void:
 	# LEVIATAN dura ~49 s y la del MURO ~36, asi que un numero fijo etiquetaria
 	# mal los actos justo en el tier mas espectacular.
 	var tier := current_tier()
-	var retreat_start: float = tier.retreat_seconds() * 1.5 if tier != null else 55.0
+	var retreat_start: float = tier.retreat_seconds() * retreat_act_factor if tier != null else 55.0
 
 	var next: Act
 	if seconds_to_impact > retreat_start:
 		next = Act.TORMENTA
-	elif seconds_to_impact > 8.0:
+	elif seconds_to_impact > warning_seconds:
 		next = Act.RETIRADA
 	elif seconds_to_impact > 0.0:
 		next = Act.AVISO
-	elif seconds_to_impact > -6.0:
+	elif seconds_to_impact > -impact_tail_seconds:
 		next = Act.IMPACTO
 	else:
 		next = Act.RESACA
 	_set_act(next)
 
-	if act == Act.RESACA and seconds_to_impact < -25.0:
+	if act == Act.RESACA and seconds_to_impact < -aftermath_seconds:
 		if loop:
 			if cycle_tiers and not tiers.is_empty():
 				tier_index = (tier_index + 1) % tiers.size()
@@ -192,20 +248,30 @@ func _set_act(next: Act) -> void:
 func _update_sea() -> void:
 	# El dial de furia se mueve solo; el rate limit de Ocean se encarga de que
 	# la transicion sea continua y no haya popping.
+	#
+	# La lluvia acompaña la furia (rampa automatica de Ocean) EXCEPTO de la
+	# RETIRADA en adelante: cortarla ahi es telegrafia — el silencio subito de
+	# la lluvia mientras el agua se va dice "esto no es una tormenta normal"
+	# sin una sola linea de UI (docs/CLIMA.md §1.2). Vuelve en la RESACA.
 	match act:
 		Act.CALMA:
 			Ocean.fury = fury_calm
+			Ocean.rain_scale = 1.0
 		Act.TORMENTA:
 			Ocean.fury = fury_storm
+			Ocean.rain_scale = 1.0
 		Act.RETIRADA:
 			# El oleaje de viento AFLOJA mientras el agua se va. Ese silencio
 			# relativo es lo que hace que la retirada de miedo en vez de parecer
 			# un bug: el mar se queda quieto justo antes del golpe.
 			Ocean.fury = fury_storm - 2.0
+			Ocean.rain_scale = 0.0
 		Act.AVISO, Act.IMPACTO:
 			Ocean.fury = fury_impact
+			Ocean.rain_scale = 0.0
 		Act.RESACA:
 			Ocean.fury = fury_storm
+			Ocean.rain_scale = 1.0
 
 
 func _update_atmosphere() -> void:
@@ -223,6 +289,14 @@ func _update_atmosphere() -> void:
 			target = _base_fog * 1.35
 		Act.AVISO, Act.IMPACTO:
 			target = _base_fog * 0.45
+	# La lluvia espesa la niebla POR ENCIMA de lo que pide el acto (Lagarde:
+	# las gotas comen visibilidad lejana). Como rain_scale ya es 0 en
+	# RETIRADA/AVISO, la apertura dramatica pre-impacto no se contamina.
+	target += _base_fog * 1.5 * Ocean.rain01
+	# Rampa sobre el delta de FISICA (= reloj de simulacion): determinista en
+	# partida. La version funcion-pura-de-t llega con el guion comprometido de
+	# furia (docs/CLIMA.md fase D) — un tween aqui seria irreproducible para un
+	# late joiner (§7).
 	env.fog_density = move_toward(env.fog_density, target, _base_fog * 1.6 * get_physics_process_delta_time())
 
 

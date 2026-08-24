@@ -41,6 +41,29 @@ func _ready() -> void:
 	for _i in 30:
 		await get_tree().process_frame
 	await _shoot("0_pescador_tercera")
+
+	# --- 1b. La misma toma CAMINANDO con el clip de Mixamo retargeteado: la
+	# prueba visual de que el circuito animacion->rig esta vivo ---------------
+	var skel := player.get_node(^"Pescador").find_children(
+		"*", "Skeleton3D", true, false)[0] as Skeleton3D
+	var anim: Animation = (load("res://game/player/animations/walk_retargeted.res")
+		as Animation).duplicate(true)
+	var rel := String(player.get_node(^"Pescador").get_path_to(skel))
+	for t in anim.get_track_count():
+		anim.track_set_path(t, NodePath(rel + ":" + String(anim.track_get_path(t)).split(":")[-1]))
+	var lib := AnimationLibrary.new()
+	lib.add_animation(&"walk", anim)
+	var ap := AnimationPlayer.new()
+	player.get_node(^"Pescador").add_child(ap)
+	ap.root_node = ap.get_path_to(player.get_node(^"Pescador"))
+	ap.add_animation_library(&"", lib)
+	ap.play(&"walk")
+	ap.seek(anim.length * 0.25, true)
+	for _i in 5:
+		await get_tree().process_frame
+	await _shoot("0b_pescador_caminando")
+	ap.queue_free()
+	skel.reset_bone_poses()
 	player.set_body_visible(false)
 	player_cam.current = true
 
@@ -65,10 +88,17 @@ func _ready() -> void:
 
 	# --- 5. Lucha con el mar picado: caña doblada, sedal tenso ----------------
 	rod._hook()
-	# Forzamos tension alta un instante para fotografiar el sedal en ambar/rojo.
 	for _i in 140:
 		await get_tree().process_frame
 	await _shoot("4_pov_lucha_furia5")
+
+	# --- 6. El forcejeo: manteniendo A, la caña (y las manos) se van con la
+	# contra, y el pez corriendo arrastra la camara ----------------------------
+	Input.action_press(&"move_left")
+	for _i in 50:
+		await get_tree().process_frame
+	await _shoot("5_pov_forcejeo_contra_A")
+	Input.action_release(&"move_left")
 
 	print("capturas en: ", ProjectSettings.globalize_path(_dir))
 	get_tree().quit(0)
@@ -79,3 +109,4 @@ func _shoot(label: String) -> void:
 	var img := get_viewport().get_texture().get_image()
 	var err := img.save_png("%s/%s.png" % [_dir, label])
 	print("%s  %s" % ["OK  " if err == OK else "FALLO", label])
+

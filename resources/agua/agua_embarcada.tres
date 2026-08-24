@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="AguaEmbarcadaBalance" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://game/boat/agua_embarcada_balance.gd" id="1_balance"]
+
+[resource]
+script = ExtResource("1_balance")
+margen_borda = 0.3
+rebase_pleno = 1.5
+aporte_ola_min = 0.03
+aporte_ola_max = 0.08
+enfriamiento_punto = 1.2
+furia_umbral_embarque = 5.0
+embarque_mar_max = 0.055
+goteo_lluvia_max = 0.0008
+ritmo_entierro = 0.15
+umbral_alarma = 0.55
+histeresis_alarma = 0.05
+umbral_naufragio = 0.85
+sostenido_naufragio = 3.0
+caudal_bomba = 0.02

@@ -34,25 +34,54 @@ enum State { DECK, SWIMMING, UNDERWATER }
 
 @export var body_height: float = 1.8
 
-## Manos en primera persona: son los mitones del PROPIO modelo, clonados y
-## colgados del mango de la caña. `hand_grip_*` es la altura de cada mano sobre
-## el mango en metros. Numeros de playtest, por eso viven como exports.
-@export var hand_scale: float = 0.6
-@export var hand_grip_top: float = 0.0
-@export var hand_grip_bottom: float = -0.14
+## El brazo en primera persona: UN miton del PROPIO modelo, estirado a lo largo
+## del mango hasta que deja de ser un muñon. `arm_grip` es donde queda la mano
+## sobre el mango; el codo se va por el borde de abajo. Numeros de playtest.
+@export var arm_grip: float = 0.05
+@export var arm_length: float = 0.6
+@export var arm_radius: float = 0.07
 
 var state: State = State.DECK
 var submersion: float = 0.0
 var submerged_fraction: float = 0.0
 
-## Las dos manos estan ocupadas (luchando con un pez, bombeando...): A/D dejan
-## de mover al jugador — los consume la herramienta — y no se puede saltar.
-## Es LA apuesta fisica del diseño: pescar te quita el agarre.
-var hands_busy: bool = false
+## Manos ocupadas por lo que PORTAS (0, 1 o 2): el farol ocupa una, un pez
+## grande las dos. Lo escriben el Portador y las herramientas, nunca player.gd.
+## Con las dos manos llenas caminas (lento — lo decide el portador via
+## `carry_slowdown`) pero no saltas ni puedes lanzar la caña.
+var hands_used: int = 0
 
-## Los dos mitones del viewmodel. Publicos porque las capturas de tercera
-## persona (y manana la vista de los demas jugadores) tienen que apagarlos.
-var hands: Array[MeshInstance3D] = []
+## La herramienta ha CAPTURADO el input (la lucha de la caña): A/D son suyos y
+## no se salta. Es LA apuesta fisica del diseño: pescar te quita el agarre.
+## NO es lo mismo que llevar las dos manos llenas — con un fletan al pecho
+## caminas trastabillando; peleando un pez, no te moves.
+var input_captured: bool = false
+
+## El contrato historico "las dos manos ocupadas". La caña lo ESCRIBE al entrar
+## y salir de la lucha (captura el input Y llena las manos); el resto del juego
+## lo LEE como "no hay manos libres", venga de la lucha o de un porteo a dos
+## manos.
+var hands_busy: bool:
+	get:
+		return input_captured or hands_used >= 2
+	set(value):
+		input_captured = value
+		hands_used = 2 if value else 0
+
+## Factor de velocidad por la carga (1 = libre). Lo escribe el Portador segun
+## el peso: la sardina no se nota, el atun te convierte en procesion.
+var carry_slowdown: float = 1.0
+
+## El brazo del viewmodel. Publico porque las capturas de tercera persona (y
+## manana la vista de los demas jugadores) tienen que apagarlo.
+var arm: MeshInstance3D = null
+
+## El cuerpo animado. Publico porque tests y capturas plantan poses concretas.
+var animator: PlayerAnimator = null
+
+## Gesticulacion facial aditiva: parpadeo, mirada, habla y expresiones. Vive
+## separada del AnimationTree corporal para no competir por Head/Neck.
+var face_animator: PlayerFaceAnimator = null
 
 @onready var _camera: Camera3D = $Camera3D
 
@@ -69,9 +98,10 @@ func _ready() -> void:
 	floor_stop_on_slope = false
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	_setup_first_person_body()
+	_setup_animator()
 
 
-## En primera persona solo se ven las MANOS: ni cuerpo, ni cuello, ni botas.
+## En primera persona solo se ve UN BRAZO: ni cuerpo, ni cuello, ni botas.
 ## El pescador entero pasa a "solo sombra" — se sigue proyectando en cubierta,
 ## que es informacion util (te dice donde estas parado y hacia donde miras),
 ## pero deja de recortar la camara y de taparte la caña con el chubasquero.
@@ -81,43 +111,81 @@ func _setup_first_person_body() -> void:
 		return
 	for mesh: MeshInstance3D in _body_meshes(model):
 		mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
-	_add_hand(model, &"palma_R", hand_grip_top)
-	_add_hand(model, &"palma_L", hand_grip_bottom)
+	_build_arm(model)
 
 
-## Clona un miton del modelo y lo cuelga del pivote de la caña, a `grip` metros
-## sobre el mango. Colgarlo del PIVOTE y no de la camara es lo que hace que la
-## mano siga el doblado y el latigazo de la caña sin animar una sola linea.
-func _add_hand(model: Node3D, part_name: StringName, grip: float) -> void:
-	var src := model.find_child(String(part_name), true, false) as MeshInstance3D
-	if src == null:
+## Un unico brazo: la bola del miton derecho estirada a lo largo del mango hasta
+## que deja de ser un muñon y entra en cuadro por abajo como un antebrazo. Se
+## queda con el material del pescador (misma piel, mismo low poly). Cuelga del
+## PIVOTE de la caña y no de la camara: asi sigue el doblado y el latigazo sin
+## animar una sola linea.
+func _build_arm(model: Node3D) -> void:
+	# Pedimos por tipo: el modelo historico tenia un BoneAttachment3D con este
+	# mismo nombre y el nuevo conserva la malla como contrato de material.
+	var found := model.find_children("palma_R", "MeshInstance3D", true, false)
+	var src: MeshInstance3D = found[0] if not found.is_empty() else null
+	if src == null or src.mesh == null:
 		return
 	var mount := get_node_or_null(^"Camera3D/FishingRod/RodPivot") as Node3D
 	if mount == null:
 		mount = _camera
-	var hand := src.duplicate() as MeshInstance3D
-	hand.name = "Mano_%s" % part_name
-	# El miton esta modelado centrado en su propio origen: conservamos su escala
-	# (es un elipsoide, no una esfera) y tiramos su sitio en el cuerpo, que aqui
-	# ya no significa nada.
-	hand.transform = Transform3D(
-		src.transform.basis.scaled(Vector3.ONE * hand_scale),
-		Vector3(0.0, grip, 0.0))
-	# Una mano flotando delante de la camara no proyecta sombra: la sombra buena,
+	arm = MeshInstance3D.new()
+	arm.name = "BrazoPrimeraPersona"
+	# La bola del miton estirada a secas acaba en punta (un elipsoide 4:1 parece
+	# un cono). Capsula: mismo largo, mismo material del pescador, pero con el
+	# extremo REDONDO, que es lo que lee como brazo.
+	var capsule := CapsuleMesh.new()
+	capsule.radius = arm_radius
+	capsule.height = maxf(arm_length, arm_radius * 2.0 + 0.001)
+	capsule.radial_segments = 8
+	capsule.rings = 2
+	arm.mesh = capsule
+	# La mano cae en el mango y el brazo tira hacia atras (-Y del pivote), que es
+	# justo hacia donde estaria tu hombro.
+	arm.position = Vector3(0.0, arm_grip - capsule.height * 0.5, 0.0)
+	# Un brazo flotando delante de la camara no proyecta sombra: la sombra buena,
 	# la del cuerpo entero, ya la esta tirando el modelo.
-	hand.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	# ...y tampoco las RECIBE. El cuerpo invisible te sigue tapando el sol, y sin
-	# esto las manos se ponen grises justo cuando mas las miras (peleando).
+	arm.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# ...y tampoco la RECIBE. El cuerpo invisible te sigue tapando el sol, y sin
+	# esto el brazo se pone gris justo cuando mas lo miras (peleando).
 	var mat := src.get_active_material(0)
 	if mat is StandardMaterial3D:
 		var view_mat := (mat as StandardMaterial3D).duplicate() as StandardMaterial3D
 		view_mat.disable_receive_shadows = true
-		hand.material_override = view_mat
-	mount.add_child(hand)
-	hands.append(hand)
+		arm.material_override = view_mat
+	else:
+		arm.material_override = mat
+	mount.add_child(arm)
 
 
-## Todas las piezas dibujables del pescador (el modelo son ~37 mallas sueltas).
+## Monta el arbol de animacion sobre el modelo. Si faltara un clip el jugador
+## tiene que seguir jugable: te quedas en T-pose, que es feo pero no rompe nada.
+func _setup_animator() -> void:
+	var model := get_node_or_null(^"Pescador") as Node3D
+	if model == null:
+		return
+	var a: PlayerAnimator = PlayerAnimator.new()
+	a.name = "Animator"
+	add_child(a)
+	if a.setup(model):
+		animator = a
+	else:
+		a.queue_free()
+
+	# La cara tambien funciona si faltan clips corporales: en ese caso conserva
+	# los microgestos autonomos y simplemente no recibe contexto de locomocion.
+	var facial := PlayerFaceAnimator.new()
+	facial.name = "FaceAnimator"
+	add_child(facial)
+	if facial.setup(model):
+		face_animator = facial
+		if animator != null:
+			face_animator.bind_body_animator(animator)
+	else:
+		facial.queue_free()
+
+
+## Todas las piezas dibujables del pescador, rigidas o skinned.
 func _body_meshes(model: Node3D) -> Array[MeshInstance3D]:
 	var out: Array[MeshInstance3D] = []
 	for node: Node in model.find_children("*", "MeshInstance3D", true, false):
@@ -138,8 +206,8 @@ func set_body_visible(body_visible: bool) -> void:
 	)
 	for mesh: MeshInstance3D in _body_meshes(model):
 		mesh.cast_shadow = mode
-	for hand: MeshInstance3D in hands:
-		hand.visible = not body_visible
+	if arm != null:
+		arm.visible = not body_visible
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -166,6 +234,30 @@ func _physics_process(delta: float) -> void:
 			_process_swimming(delta)
 
 	move_and_slide()
+	_feed_animator(delta)
+
+
+## La animacion se alimenta de `velocity` TAL CUAL, y esto es contraintuitivo:
+## parece que sobre un barco en marcha habria que restarle la velocidad de la
+## plataforma. NO. Medido en el toybox con el jugador quieto sobre la cubierta:
+## `velocity` = (0,0,0) y `get_platform_velocity()` = el cabeceo del barco
+## (hasta 0.5 m/s). Godot ya mueve al CharacterBody3D con la plataforma sin
+## tocarle la velocidad, asi que restarla haria que el pescador "caminara" con
+## cada ola y que la mezcla vibrara con el balanceo. Si alguien lo "arregla",
+## esta es la razon por la que no.
+func _feed_animator(delta: float) -> void:
+	if animator == null:
+		return
+	var ratio: float = 0.0
+	if not is_in_water():
+		ratio = Vector2(velocity.x, velocity.z).length() / maxf(walk_speed, 0.001)
+	# El agua no entra de golpe al cruzar el umbral de nadar: se va colando desde
+	# que te llega al muslo. Vadear y nadar son el mismo gesto continuo, y un
+	# corte seco justo en el umbral se lee como un bug de estado.
+	var agua := smoothstep(swim_threshold - 0.2, swim_threshold, submerged_fraction)
+	# La pose de caña la dispara LA LUCHA, no el recuento de manos: con un fletan
+	# a dos manos caminas cargando, no pescando.
+	animator.update(ratio, agua, input_captured, delta)
 
 
 func _update_water_state() -> void:
@@ -187,7 +279,7 @@ func _update_water_state() -> void:
 
 
 func _input_direction() -> Vector3:
-	if hands_busy:
+	if input_captured:
 		return Vector3.ZERO # A/D son ahora la contra de la caña, no andar
 	var raw := Input.get_vector(&"move_left", &"move_right", &"move_forward", &"move_back")
 	return (transform.basis * Vector3(raw.x, 0.0, raw.y)).normalized()
@@ -199,7 +291,7 @@ func _process_deck(delta: float) -> void:
 
 	var dir := _input_direction()
 	var accel: float = deck_acceleration if is_on_floor() else air_acceleration
-	var target := dir * walk_speed
+	var target := dir * walk_speed * carry_slowdown
 
 	velocity.x = move_toward(velocity.x, target.x, accel * delta)
 	velocity.z = move_toward(velocity.z, target.z, accel * delta)
@@ -220,7 +312,7 @@ func _process_swimming(delta: float) -> void:
 	# corriente pudiera anular el input, el juego se sentiria roto en vez de
 	# dificil, que es la diferencia entre comedia y castigo.
 	var current := Ocean.get_surface_velocity(global_position)
-	var target := _input_direction() * swim_speed + Vector3(current.x, 0.0, current.z)
+	var target := _input_direction() * swim_speed * carry_slowdown + Vector3(current.x, 0.0, current.z)
 	velocity.x = move_toward(velocity.x, target.x, 4.0 * delta)
 	velocity.z = move_toward(velocity.z, target.z, 4.0 * delta)
 

@@ -1,0 +1,10 @@
+[gd_resource type="Resource" script_class="TipoCebo" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://game/fishing/tipo_cebo.gd" id="1_cebo"]
+
+[resource]
+script = ExtResource("1_cebo")
+nombre = "Cebo vivo"
+espera_factor = 0.5
+sesgo = 1.0
+color = Color(0.72, 0.34, 0.3, 1)

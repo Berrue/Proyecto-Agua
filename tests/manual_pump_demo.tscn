@@ -1,0 +1,111 @@
+[gd_scene load_steps=12 format=3]
+
+[ext_resource type="Script" path="res://tests/manual_pump_demo.gd" id="1_demo"]
+[ext_resource type="PackedScene" path="res://game/boat/equipment/manual_bilge_pump.tscn" id="2_pump"]
+
+[sub_resource type="ProceduralSkyMaterial" id="SkyMat"]
+sky_top_color = Color(0.08, 0.15, 0.19, 1)
+sky_horizon_color = Color(0.52, 0.61, 0.62, 1)
+ground_bottom_color = Color(0.025, 0.035, 0.04, 1)
+ground_horizon_color = Color(0.28, 0.31, 0.30, 1)
+sun_angle_max = 20.0
+
+[sub_resource type="Sky" id="Sky"]
+sky_material = SubResource("SkyMat")
+
+[sub_resource type="Environment" id="Environment"]
+background_mode = 2
+sky = SubResource("Sky")
+ambient_light_source = 3
+ambient_light_color = Color(0.62, 0.70, 0.72, 1)
+ambient_light_energy = 0.55
+tonemap_mode = 2
+
+[sub_resource type="StandardMaterial3D" id="Mat_deck"]
+albedo_color = Color(0.25, 0.105, 0.038, 1)
+roughness = 0.9
+
+[sub_resource type="BoxMesh" id="Mesh_deck"]
+material = SubResource("Mat_deck")
+size = Vector3(9, 0.08, 7)
+
+[sub_resource type="StandardMaterial3D" id="Mat_hand"]
+albedo_color = Color(1, 0.58, 0.08, 1)
+emission_enabled = true
+emission = Color(0.55, 0.18, 0.015, 1)
+emission_energy_multiplier = 0.7
+roughness = 0.5
+
+[sub_resource type="SphereMesh" id="Mesh_hand"]
+material = SubResource("Mat_hand")
+radius = 0.075
+height = 0.15
+radial_segments = 12
+rings = 6
+
+[sub_resource type="StandardMaterial3D" id="Mat_scale"]
+albedo_color = Color(0.055, 0.085, 0.095, 1)
+metallic = 0.05
+roughness = 0.82
+
+[sub_resource type="CapsuleMesh" id="Mesh_body"]
+material = SubResource("Mat_scale")
+radius = 0.22
+height = 1.35
+radial_segments = 10
+rings = 4
+
+[sub_resource type="SphereMesh" id="Mesh_head"]
+material = SubResource("Mat_scale")
+radius = 0.18
+height = 0.36
+radial_segments = 10
+rings = 6
+
+[node name="ManualPumpDemo" type="Node3D"]
+script = ExtResource("1_demo")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment")
+
+[node name="Deck" type="MeshInstance3D" parent="."]
+position = Vector3(0, -0.04, 0)
+mesh = SubResource("Mesh_deck")
+
+[node name="ManualBilgePump" parent="." instance=ExtResource("2_pump")]
+position = Vector3(0, 0.25, 0)
+
+[node name="GripTarget" type="Marker3D" parent="."]
+position = Vector3(0.2, 0.49, 0.27)
+
+[node name="DebugHand" type="MeshInstance3D" parent="GripTarget"]
+mesh = SubResource("Mesh_hand")
+
+[node name="ScaleReference" type="Node3D" parent="."]
+position = Vector3(-1.20, 0, -1.00)
+editor_description = "Silueta de 1,80 m para juzgar escala; no pertenece al activo runtime."
+
+[node name="Body" type="MeshInstance3D" parent="ScaleReference"]
+position = Vector3(0, 0.78, 0)
+mesh = SubResource("Mesh_body")
+
+[node name="Head" type="MeshInstance3D" parent="ScaleReference"]
+position = Vector3(0, 1.62, 0)
+mesh = SubResource("Mesh_head")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+rotation = Vector3(-0.872665, -0.610865, 0)
+light_color = Color(1, 0.88, 0.72, 1)
+light_energy = 1.3
+shadow_enabled = true
+
+[node name="FillLight" type="OmniLight3D" parent="."]
+position = Vector3(-2, 2.6, -2)
+light_color = Color(0.55, 0.72, 1, 1)
+light_energy = 4.0
+omni_range = 7.0
+
+[node name="Camera3D" type="Camera3D" parent="."]
+position = Vector3(3.15, 2.15, -4.0)
+current = true
+fov = 50.0
