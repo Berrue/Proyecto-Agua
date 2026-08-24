@@ -147,6 +147,36 @@ con `olvidar_historial_agua()`, y hay un test que lo vigila.
   invitación por overlay y reconexión. Medido contra el código: 2-4 días el
   transporte y 1-2 semanas más el lobby y su UI.
 
+## Quién está a bordo, y con cuánto retardo (TAB)
+
+La lista de tripulación (`TAB`, autoload `Partida`) sale de dos cosas que solo
+puede saber el host, así que las sabe el host y las reparte hechas:
+
+- **El nombre.** Al conectarse, el cliente se presenta con un RPC fiable
+  (`Net._presentarse`), y el host lo guarda saneado (`NetTripulacion.limpiar_nombre`
+  — llega de otra máquina: un salto de línea parte la fila en dos y un nombre de
+  4 kB empuja el ping fuera de la pantalla). Sin ajustes, el nombre es el de la
+  sesión del sistema operativo: sin eso, las dos ventanas del ciclo de trabajo
+  se llaman igual. Se cambia en Opciones y se guarda en `user://ajustes.cfg`.
+- **El retardo.** Se lo pregunta a ENet
+  (`ENetPacketPeer.PEER_ROUND_TRIP_TIME`), que ya lo mide para su propio control
+  de flujo: montar un eco por encima sería medir dos veces la misma cosa, y
+  peor. **Un cliente solo tiene socket contra el host**, así que el ping de los
+  demás no lo puede saber ni aproximar — por eso el host mide a todos y manda la
+  tabla entera a 1 Hz (`_tripulacion_al_dia`). Es información de lectura: a más
+  frecuencia el número parpadea y deja de poder compararse.
+
+`NetTripulacion` es la clase pura de siempre (orden estable, umbrales de color,
+códec tolerante a paquetes rotos) y `tests/partida_tests.tscn` la cubre. Con el
+transporte de Steam (R2) el ping devuelve «no se sabe» en vez de inventar un
+cero: no hay de dónde sacarlo todavía.
+
+`Net.desconectar()` cierra la sesión desde dentro del juego (el menú de `Esc`).
+Hasta ahora solo se salía de la red por accidente (`_al_caerse_el_host`) o
+cerrando el proceso. No manda ningún adiós propio: cerrar el peer ya dispara
+`peer_disconnected` en los demás, que es justo por donde el host te vacía las
+manos y te saca de las estaciones.
+
 ## Cómo se prueba (F1, dos ventanas)
 
 1. Instancia A: `F9` (o `--net-host`) — se vuelve host en el puerto 4247.

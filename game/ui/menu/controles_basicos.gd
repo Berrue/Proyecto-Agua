@@ -58,7 +58,8 @@ const FILAS: Array[Dictionary] = [
 	{"etiqueta": "Agarrar y lanzar", "acciones": ["grab"], "fijo": ""},
 	{"etiqueta": "Interactuar", "acciones": ["interact"], "fijo": ""},
 	{"etiqueta": "Cinturón", "acciones": ["belt"], "fijo": ""},
-	{"etiqueta": "Soltar el ratón", "acciones": ["toggle_mouse"], "fijo": ""},
+	{"etiqueta": "Ver la tripulación", "acciones": ["crew"], "fijo": ""},
+	{"etiqueta": "Menú y ratón", "acciones": ["toggle_mouse"], "fijo": ""},
 ]
 
 

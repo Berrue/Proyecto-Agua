@@ -32,14 +32,15 @@ const RUTA_PARTIDA := "res://game/world/toybox.tscn"
 ## al empezar a jugar ([method _devolver_el_mar]).
 const FURIA_PORTADA := 1.6
 
-## Paleta tipográfica de `docs/TIPOGRAFIA.md`: el color expresa estado, la forma
-## de las letras expresa identidad.
-const CREMA := Color(0.914, 0.933, 0.937)
-const APAGADO := Color(0.62, 0.68, 0.70)
-const LATON := Color(1.0, 0.72, 0.25)
-const CORAL := Color(0.90, 0.36, 0.30)
-const VERDE := Color(0.55, 0.80, 0.62)
-const PETROLEO := Color(0.051, 0.071, 0.098)
+## La paleta y las cajas salen de `EstiloMenu`, que es la fábrica compartida con
+## el menú de Esc: dos pantallas de menú con dos ámbares distintos dejan de ser
+## el mismo juego (es la regla 11 aplicada al color y al margen).
+const CREMA := EstiloMenu.CREMA
+const APAGADO := EstiloMenu.APAGADO
+const LATON := EstiloMenu.LATON
+const CORAL := EstiloMenu.CORAL
+const VERDE := EstiloMenu.VERDE
+const PETROLEO := EstiloMenu.PETROLEO
 
 const MARGEN_X := 76.0
 const ANCHO_COLUMNA := 780.0
@@ -52,7 +53,7 @@ const ANCHO_AYUDA := 560.0
 ## Ancho de los botones. El más largo («Conectarse a una partida») cabe justo, y
 ## que todos midan lo mismo es lo que hace que la banda del foco sea una lista y
 ## no una escalera.
-const ANCHO_BOTON := 430.0
+const ANCHO_BOTON := EstiloMenu.ANCHO_BOTON
 
 ## Cada cuánto se relee la lista de micrófonos, en segundos. El mismo intervalo
 ## que usa el autoload `Microfono` para vigilar desconexiones: enumerar aparatos
@@ -71,6 +72,7 @@ var _estado: Label
 var _pista: Label
 var _ip: LineEdit
 
+var _nombre_campo: LineEdit
 var _mic_lista: OptionButton
 var _mic_nivel: ProgressBar
 var _mic_volumen: HSlider
@@ -96,6 +98,10 @@ var _furia_previa: float = -1.0
 func _ready() -> void:
 	layer = 0
 	_furia_previa = Ocean.fury
+	# Una portada no es una partida: el guion del clima que estuviera en vigor
+	# (se puede volver aquí desde el menú de Esc) se acabó con esa marea, y si
+	# siguiera corriendo le pisaría la furia a la portada cada frame.
+	Ocean.limpiar_parte()
 	Ocean.set_fury_immediate(FURIA_PORTADA)
 	# `player.gd` captura el puntero en cuanto nace, y de ahí no vuelve solo. El
 	# menú es la pantalla que lo devuelve.
@@ -299,10 +305,26 @@ func _aplicar_ajustes_guardados() -> void:
 	_poblar_microfonos()
 	_mic_volumen.value = Microfono.volumen_pct
 	_pintar_pct()
+	# Un nombre guardado manda sobre el que `Net` sacó del sistema operativo; si
+	# no hay ninguno, el campo enseña ese, que es el que se va a usar de verdad.
+	var guardado := String(ajustes[MenuAjustes.CLAVE_NOMBRE])
+	if not guardado.is_empty():
+		Net.nombre_local = guardado
+	_nombre_campo.text = Net.nombre_local
+
+
+func _al_escribir_nombre(texto: String) -> void:
+	# Se aplica al teclear para que el campo y lo que verán los demás sean lo
+	# mismo; al disco va al salir de Opciones, no una vez por letra.
+	Net.nombre_local = NetTripulacion.limpiar_nombre(texto)
 
 
 func _guardar_ajustes() -> void:
-	MenuAjustes.guardar(_mic_preferido, Microfono.volumen_pct)
+	MenuAjustes.guardar({
+		MenuAjustes.CLAVE_DISPOSITIVO: _mic_preferido,
+		MenuAjustes.CLAVE_VOLUMEN: Microfono.volumen_pct,
+		MenuAjustes.CLAVE_NOMBRE: _nombre_campo.text,
+	})
 
 
 func _al_elegir_microfono(indice: int) -> void:
@@ -497,18 +519,9 @@ func _panel_unirse() -> void:
 	var caja := _caja_panel()
 	caja.add_child(_ayuda(
 		"La dirección de quien hostea. 127.0.0.1 es este mismo equipo, para probar con dos ventanas."))
-	_ip = LineEdit.new()
+	_ip = EstiloMenu.campo(340.0)
 	_ip.text = "127.0.0.1"
 	_ip.placeholder_text = "127.0.0.1"
-	_ip.custom_minimum_size = Vector2(340.0, 0.0)
-	_ip.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-	_ip.add_theme_font_override(&"font", GameTypography.ui_regular())
-	_ip.add_theme_font_size_override(&"font_size", 19)
-	_ip.add_theme_color_override(&"font_color", CREMA)
-	_ip.add_theme_color_override(&"font_placeholder_color", APAGADO)
-	_ip.add_theme_color_override(&"caret_color", LATON)
-	_ip.add_theme_stylebox_override(&"normal", _estilo_campo(false))
-	_ip.add_theme_stylebox_override(&"focus", _estilo_campo(true))
 	_ip.text_submitted.connect(_al_enviar_ip)
 	caja.add_child(_ip)
 	caja.add_child(_boton("Conectar", _conectar_desde_campo))
@@ -546,6 +559,19 @@ func _panel_opciones() -> void:
 	derecha.add_theme_constant_override(&"separation", 6)
 	derecha.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	columnas.add_child(derecha)
+
+	# Quién eres a bordo. Va antes que el micrófono porque es lo que ven los
+	# demás en la lista de tripulación (Tab), y sin esto todos serían el nombre
+	# de la sesión del sistema operativo.
+	derecha.add_child(_seccion("A bordo"))
+	_nombre_campo = EstiloMenu.campo(280.0)
+	_nombre_campo.max_length = NetTripulacion.NOMBRE_MAX
+	_nombre_campo.placeholder_text = NetTripulacion.NOMBRE_POR_DEFECTO
+	_nombre_campo.text_changed.connect(_al_escribir_nombre)
+	derecha.add_child(_nombre_campo)
+	derecha.add_child(_ayuda(
+		"Tu nombre en la lista de tripulación. Se manda al entrar en una partida.",
+		380.0))
 
 	derecha.add_child(_seccion("Micrófono"))
 	_mic_lista = OptionButton.new()
@@ -630,101 +656,29 @@ func _conectar_desde_campo() -> void:
 
 
 # =============================================================================
-#  Piezas de la interfaz — todas las fuentes salen de GameTypography (regla 11)
+#  Piezas de la interfaz — todas de `EstiloMenu`, la fábrica compartida
 # =============================================================================
 
 func _etiqueta(texto: String, fuente: Font, tamano: int, color: Color) -> Label:
-	var etiqueta := Label.new()
-	etiqueta.text = texto
-	var ls := LabelSettings.new()
-	ls.font = fuente
-	ls.font_size = tamano
-	ls.font_color = color
-	# Contorno oscuro y sombra corta: el texto va sobre el mar, y el mar cambia
-	# de blanco a azul dentro de la misma ola (docs/TIPOGRAFIA.md).
-	ls.outline_size = maxi(4, tamano / 5)
-	ls.outline_color = Color(PETROLEO.r, PETROLEO.g, PETROLEO.b, 0.95)
-	ls.shadow_size = 4
-	ls.shadow_color = Color(0.0, 0.0, 0.0, 0.45)
-	etiqueta.label_settings = ls
-	etiqueta.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	return etiqueta
+	return EstiloMenu.etiqueta(texto, fuente, tamano, color)
 
 
-## Texto de ayuda de un panel: en frase normal y en la voz de información, nunca
-## en la de impacto. Explicar no es un imperativo.
 func _ayuda(texto: String, ancho: float = ANCHO_AYUDA) -> Label:
-	var etiqueta := _etiqueta(texto, GameTypography.ui_regular(), 16, APAGADO)
-	etiqueta.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	etiqueta.custom_minimum_size = Vector2(ancho, 0.0)
-	etiqueta.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-	return etiqueta
+	return EstiloMenu.ayuda(texto, ancho)
 
 
 func _seccion(texto: String) -> Label:
-	var etiqueta := _etiqueta(texto, GameTypography.ui_bold(), 16, LATON)
-	etiqueta.custom_minimum_size = Vector2(0.0, 42.0)
-	etiqueta.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
-	return etiqueta
+	return EstiloMenu.seccion(texto)
 
 
+## El botón, ya vestido, más lo que es de ESTA pantalla: a qué llama y que quede
+## apuntado para poder apagarlos todos mientras se intenta una conexión.
 func _boton(texto: String, accion: Callable) -> Button:
-	var boton := Button.new()
-	boton.text = texto
-	boton.alignment = HORIZONTAL_ALIGNMENT_LEFT
-	boton.focus_mode = Control.FOCUS_ALL
-	# Ancho fijo y no el de la columna: el resalte del foco es una BANDA, y una
-	# banda que llega a media pantalla deja de leerse como un botón.
-	boton.custom_minimum_size = Vector2(ANCHO_BOTON, 0.0)
-	boton.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-	boton.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	boton.add_theme_font_override(&"font", GameTypography.display_hud())
-	boton.add_theme_font_size_override(&"font_size", 30)
-	boton.add_theme_color_override(&"font_color", CREMA)
-	boton.add_theme_color_override(&"font_hover_color", LATON)
-	boton.add_theme_color_override(&"font_focus_color", LATON)
-	boton.add_theme_color_override(&"font_pressed_color", LATON)
-	boton.add_theme_color_override(&"font_hover_pressed_color", LATON)
-	boton.add_theme_color_override(&"font_disabled_color", APAGADO)
-	boton.add_theme_color_override(&"font_outline_color",
-		Color(PETROLEO.r, PETROLEO.g, PETROLEO.b, 0.95))
-	boton.add_theme_constant_override(&"outline_size", 6)
-	# El resalte lo pinta SIEMPRE el estilo de foco, y el ratón mueve el foco al
-	# pasar por encima: así teclado y ratón nunca señalan botones distintos, que
-	# es como se acaba pulsando Intro sobre el que no estabas mirando.
-	boton.add_theme_stylebox_override(&"normal", _estilo_boton(0.0, false))
-	boton.add_theme_stylebox_override(&"hover", _estilo_boton(0.0, false))
-	boton.add_theme_stylebox_override(&"disabled", _estilo_boton(0.0, false))
-	boton.add_theme_stylebox_override(&"focus", _estilo_boton(0.20, true))
-	boton.add_theme_stylebox_override(&"pressed", _estilo_boton(0.30, true))
+	var boton := EstiloMenu.boton(texto)
 	boton.pressed.connect(accion)
-	boton.mouse_entered.connect(boton.grab_focus)
 	_botones.append(boton)
 	return boton
 
 
-## La caja de un botón. Los márgenes son los MISMOS en todos los estados: si la
-## barra del foco moviera el texto, la lista entera bailaría al pasar el ratón.
-func _estilo_boton(alfa: float, barra: bool) -> StyleBoxFlat:
-	var caja := StyleBoxFlat.new()
-	caja.bg_color = Color(0.09, 0.13, 0.17, alfa)
-	caja.content_margin_left = 20.0
-	caja.content_margin_right = 20.0
-	caja.content_margin_top = 9.0
-	caja.content_margin_bottom = 9.0
-	if barra:
-		caja.border_width_left = 4
-		caja.border_color = LATON
-	return caja
-
-
 func _estilo_campo(activo: bool) -> StyleBoxFlat:
-	var caja := StyleBoxFlat.new()
-	caja.bg_color = Color(0.05, 0.08, 0.12, 0.85)
-	caja.content_margin_left = 12.0
-	caja.content_margin_right = 12.0
-	caja.content_margin_top = 8.0
-	caja.content_margin_bottom = 8.0
-	caja.border_width_bottom = 2
-	caja.border_color = LATON if activo else Color(0.35, 0.41, 0.45)
-	return caja
+	return EstiloMenu.caja_campo(activo)

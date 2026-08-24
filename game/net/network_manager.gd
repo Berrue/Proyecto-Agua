@@ -53,6 +53,11 @@ const HZ_MUNDO := 20.0
 ## que no lo necesita.
 const HZ_AGUA := 4.0
 
+## La lista de tripulacion (TAB). Una vez por segundo: es informacion de lectura,
+## no de simulacion, y un ping que parpadea diez veces por segundo no se puede
+## ni leer ni comparar.
+const HZ_TRIPULACION := 1.0
+
 ## Cuantos snapshots de barco guardamos (a 20 Hz, ~1 s de historia).
 const BUFFER_BARCO_MAX := 24
 
@@ -95,6 +100,20 @@ var rol: Rol = Rol.OFFLINE
 var _acum_mar: float = 0.0
 var _acum_mundo: float = 0.0
 var _acum_agua: float = 0.0
+var _acum_tripulacion: float = 0.0
+
+## Como te llaman los demas. Lo escribe el menu desde los ajustes guardados; sin
+## pasar por el menu (abrir el juguete a pelo, que es el ciclo de trabajo) cae al
+## nombre de la sesion del sistema operativo, que es lo unico que distingue dos
+## ventanas en la misma maquina.
+var nombre_local: String = ""
+
+## peer -> nombre, SOLO en el host: es quien recibe las presentaciones y quien
+## reparte la lista ya montada.
+var _nombres: Dictionary = {}
+
+## Lo ultimo que mando el host, ya desempaquetado. SOLO en el cliente.
+var _tripulacion_vista: Array = []
 
 ## CLIENTE: estimacion del reloj del host (ultimo recibido + delta local).
 var _host_time: float = 0.0
@@ -144,6 +163,7 @@ var _barco_cache: RigidBody3D = null
 
 
 func _ready() -> void:
+	nombre_local = NetTripulacion.limpiar_nombre(_nombre_del_sistema())
 	multiplayer.peer_connected.connect(_al_conectarse_peer)
 	multiplayer.peer_disconnected.connect(_al_irse_peer)
 	multiplayer.connected_to_server.connect(_al_conectar_como_cliente)
@@ -224,6 +244,39 @@ func unirse(destino: String) -> void:
 		return
 	multiplayer.multiplayer_peer = peer
 	rol = Rol.CLIENTE
+	_refrescar_overlay()
+
+
+## Cerrar la sesion y volver a estar solo. Es la operacion que faltaba: hasta
+## ahora solo se salia de la red por accidente (`_al_caerse_el_host`) o cerrando
+## el juego, y el menu de pausa necesita una puerta de salida limpia.
+##
+## No hace falta un RPC de despedida: cerrar el peer ya dispara
+## `peer_disconnected` en los demas, que es exactamente por donde el host vacia
+## tus manos y te saca de las estaciones.
+func desconectar() -> void:
+	if rol == Rol.OFFLINE:
+		return
+	multiplayer.multiplayer_peer = null
+	rol = Rol.OFFLINE
+	for peer: int in _remotos.keys():
+		_despedir(peer)
+	_tiene_hola = false
+	_buffer_barco.clear()
+	_nombres.clear()
+	_tripulacion_vista.clear()
+	# Las tablas apuntan a nodos de una escena que se muere en el cambio: si se
+	# quedaran puestas, la siguiente partida censaria fantasmas.
+	_cuerpos.clear()
+	_ids.clear()
+	_dueno.clear()
+	_buffers.clear()
+	_reposo.clear()
+	_quietos.clear()
+	_visto.clear()
+	_especies.clear()
+	_estados.clear()
+	_visto_jugador.clear()
 	_refrescar_overlay()
 
 
@@ -356,6 +409,7 @@ func _al_irse_peer(id: int) -> void:
 		# que ya no esta es un barco que nadie puede achicar.
 		_liberar_bombas_de(id)
 		_chau.rpc(id)
+	_nombres.erase(id)
 	_despedir(id)
 	_refrescar_overlay()
 
@@ -377,6 +431,10 @@ func _vaciar_manos_de(peer: int) -> void:
 
 
 func _al_conectar_como_cliente() -> void:
+	# Lo primero que se dice al subir a bordo es como te llamas. Va aparte del
+	# `_hola` (que viaja al reves, del host al que llega) y es fiable: si se
+	# pierde, ese tripulante se queda de "Marinero" para siempre.
+	_presentarse.rpc_id(NetTripulacion.HOST, nombre_local)
 	_refrescar_overlay()
 
 
@@ -471,6 +529,13 @@ func _tick_host(delta: float) -> void:
 			_estado_cuerpos.rpc(lote)
 		_emitir_mi_jugador()
 		_vigilar_peces()
+
+	_acum_tripulacion += delta
+	if _acum_tripulacion >= 1.0 / HZ_TRIPULACION:
+		_acum_tripulacion -= 1.0 / HZ_TRIPULACION
+		# El host es el UNICO que puede medir el retardo de cada uno: un cliente
+		# solo tiene socket contra el host. Por eso la mide y la reparte hecha.
+		_tripulacion_al_dia.rpc(NetTripulacion.empaquetar(_medir_tripulacion()))
 
 	_acum_agua += delta
 	if _acum_agua >= 1.0 / HZ_AGUA:
@@ -1881,6 +1946,90 @@ func _jugador_local() -> Player:
 # =============================================================================
 #  El overlay: una linea que dice quien sos
 # =============================================================================
+
+# =============================================================================
+#  La tripulacion (la lista de TAB)
+# =============================================================================
+
+## Como se llama la sesion del sistema operativo. Solo como DEFECTO y solo hasta
+## que el jugador escriba el suyo en Opciones: sin esto, dos ventanas en la misma
+## maquina —que es EL ciclo de trabajo del repo— salen las dos como "Marinero".
+func _nombre_del_sistema() -> String:
+	for clave in ["USERNAME", "USER", "LOGNAME"]:
+		var valor := OS.get_environment(clave)
+		if not valor.is_empty():
+			return valor
+	return NetTripulacion.NOMBRE_POR_DEFECTO
+
+
+## La lista lista para pintar: vos solo si no hay red, la medida si sos el host,
+## y la que reparte el host si sos cliente.
+func tripulacion() -> Array:
+	match rol:
+		Rol.HOST:
+			return _medir_tripulacion()
+		Rol.CLIENTE:
+			if _tripulacion_vista.is_empty():
+				# La primera lista tarda hasta un segundo en llegar. Mientras,
+				# al menos tu fila, con el ping que ya se puede medir.
+				return [NetTripulacion.fila(multiplayer.get_unique_id(),
+					nombre_local, ping_al_host(), true)]
+			return _tripulacion_vista
+		_:
+			return [NetTripulacion.fila(NetTripulacion.SIN_RED, nombre_local,
+				NetTripulacion.MS_DESCONOCIDO, true)]
+
+
+## SOLO el host. Se arma en el momento porque el retardo lo tiene ENet aqui
+## mismo, sin preguntarle nada a nadie.
+func _medir_tripulacion() -> Array:
+	var filas: Array = [NetTripulacion.fila(NetTripulacion.HOST, nombre_local,
+		NetTripulacion.MS_DESCONOCIDO, true)]
+	for peer: int in multiplayer.get_peers():
+		filas.append(NetTripulacion.fila(peer,
+			String(_nombres.get(peer, NetTripulacion.NOMBRE_POR_DEFECTO)),
+			ping_de(peer), false))
+	return NetTripulacion.ordenar(filas)
+
+
+## El retardo de ida y vuelta contra un peer, en ms, o MS_DESCONOCIDO.
+##
+## Se lo pregunta a ENet, que YA lo mide para su propio control de flujo: montar
+## un eco por encima seria medir dos veces la misma cosa, y peor. Con el
+## transporte de Steam (R2) todavia no hay de donde sacarlo, y por eso la funcion
+## devuelve "no se sabe" en vez de inventar un cero.
+func ping_de(peer: int) -> int:
+	var enet := multiplayer.multiplayer_peer as ENetMultiplayerPeer
+	if enet == null or not multiplayer.get_peers().has(peer):
+		return NetTripulacion.MS_DESCONOCIDO
+	var canal := enet.get_peer(peer)
+	if canal == null:
+		return NetTripulacion.MS_DESCONOCIDO
+	return int(canal.get_statistic(ENetPacketPeer.PEER_ROUND_TRIP_TIME))
+
+
+## Tu propio retardo contra el host, para no esperar al goteo de un segundo.
+func ping_al_host() -> int:
+	if rol != Rol.CLIENTE:
+		return NetTripulacion.MS_DESCONOCIDO
+	return ping_de(NetTripulacion.HOST)
+
+
+## Lo primero que se dice al subir a bordo. Fiable: si se perdiera, ese
+## tripulante se quedaria de "Marinero" hasta que se reconecte.
+@rpc("any_peer", "call_remote", "reliable")
+func _presentarse(nombre: String) -> void:
+	if rol != Rol.HOST:
+		return
+	_nombres[multiplayer.get_remote_sender_id()] = NetTripulacion.limpiar_nombre(nombre)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _tripulacion_al_dia(datos: Array) -> void:
+	if _demorar(NetLag.Canal.FIABLE, _tripulacion_al_dia, [datos]):
+		return
+	_tripulacion_vista = NetTripulacion.desempaquetar(datos, multiplayer.get_unique_id())
+
 
 func _refrescar_overlay() -> void:
 	if _overlay == null:

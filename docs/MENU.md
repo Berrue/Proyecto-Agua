@@ -6,9 +6,13 @@ el mar de día de fondo.
 - Escena: `game/ui/menu/menu_principal.tscn` — y desde ahora es el
   **`run/main_scene`** del proyecto. El juguete de F1 sigue abriéndose directo
   (`--path . game/world/toybox.tscn`) para el ciclo de trabajo de siempre.
-- Arnés: `tests/menu_tests.tscn` (74 comprobaciones).
-- Capturas para revisar el look: `tests/capture_menu.tscn` (necesita ventana y
-  GPU, no se corre con `--headless`).
+- Dentro de la partida: `Esc` abre el menú de sesión y `TAB` la lista de
+  tripulación — autoload `Partida` (`game/ui/partida.gd`).
+- Arneses: `tests/menu_tests.tscn` (78 comprobaciones) y
+  `tests/partida_tests.tscn` (56).
+- Capturas para revisar el look: `tests/capture_menu.tscn` y
+  `tests/capture_partida.tscn` (necesitan ventana y GPU, no se corren con
+  `--headless`).
 
 ## El árbol
 
@@ -87,6 +91,35 @@ apuntando a la escena vieja —ya liberada—, que es justo por donde censa
 `Net.hostear()` y por donde nacen los peces. Lo cazó `menu_tests` al comprobar
 que «Un jugador» abre el mundo de verdad.
 
+## El menú de `Esc` y la lista de `TAB` (autoload `Partida`)
+
+La otra mitad: dentro de la partida, `Esc` abre una tarjeta con **Continuar /
+Volver al menú / Salir del juego**, y `TAB` (acción `crew`) enseña quién está a
+bordo con su retardo. Las dos viven en el autoload `Partida`
+(`game/ui/partida.gd`), y son autoload y no un nodo por escena a propósito: así
+las tienen todas las escenas jugables sin que nadie se acuerde de instanciarlas,
+que es el fallo silencioso clásico.
+
+Tres decisiones:
+
+1. **`Esc` no pausa NADA.** En cooperativo no se puede —el mar de los demás
+   sigue— y en solitario tampoco se hace, para que el juego se comporte igual
+   solo que acompañado. La tarjeta lo dice en voz alta en vez de fingir: «el mar
+   no se detiene».
+2. **`Esc` sigue soltando el ratón**, exactamente como antes. La tarjeta se suma
+   al gesto que ya existía en `player.gd` (acción `toggle_mouse`), no lo
+   sustituye — y por eso es pequeña y centrada: la columna izquierda es del HUD
+   de debug del océano, que tiene que seguir alcanzable con el ratón suelto
+   (CLAUDE.md: en F1 ese HUD es sagrado).
+3. **Volver al menú cierra la sesión primero** (`Net.desconectar()`). Si no, el
+   peer se quedaría abierto detrás de la portada y el host seguiría contando con
+   un tripulante que ya no está en ninguna escena.
+
+La lista de tripulación y de dónde salen los nombres y los milisegundos está en
+`docs/RED.md` §Quién está a bordo. Lo que se ve: el patrón primero, tu fila en
+ámbar con «(tú)», y el retardo en verde/ámbar/coral según los umbrales de
+`NetTripulacion` — con el número siempre delante, que el color solo acompaña.
+
 ## Opciones
 
 **Controles.** La tabla no tiene ni una tecla escrita a mano: cada fila nombra
@@ -95,7 +128,13 @@ motivos: el feedback jamás miente (regla 8) —una lista a mano envejece en
 silencio cuando alguien cambia una tecla en `project.godot`— y los teclados no
 son todos QWERTY: las acciones de andar están grabadas por código FÍSICO, así
 que en un AZERTY hay que enseñar `Z`, y eso lo sabe el sistema operativo. El
-arnés comprueba que las nueve acciones prometidas existen.
+arnés comprueba que las diez acciones prometidas existen.
+
+**A bordo.** El nombre con el que sales en la lista de tripulación. Vacío
+significa «no he elegido», y entonces manda el que `Net` sacó de la sesión del
+sistema operativo — poner «Marinero» de fábrica haría que todos se llamaran
+igual hasta que alguien se molestara en escribirlo. Se manda al ENTRAR en una
+partida, así que cambiarlo con la partida abierta no reetiqueta a nadie.
 
 **Micrófono.** Lista de aparatos (la primera opción es siempre el del sistema,
 la única que se puede prometer), ganancia de 0 a 200 % y **medidor de entrada**:
@@ -130,7 +169,14 @@ Todo sale de `GameTypography` (regla 11), y el menú añade una lectura de
 
 ## Lo que falta
 
-- **Volver al menú desde la partida** (y una pausa). Hoy es un viaje de ida.
+- ⚠️ **Un clic sobre la tarjeta de `Esc` también llega al mundo**: la caña y el
+  porteo leen `grab` sondeando `Input` en su `_physics_process`, y eso no pasa
+  por el sistema de eventos, así que pulsar «Continuar» lanza la caña de paso.
+  No lo trae este menú —pasa desde siempre con el HUD de debug, que es la otra
+  pantalla que se usa con el ratón suelto—, pero ahora se ve. El arreglo es una
+  guarda de `Input.mouse_mode` en `FishingRod._rod_input_ready()` y en las dos
+  lecturas de `Portador`; se deja aparte porque toca una comprobación de
+  `porteo_tests` que hoy da por hecho que en headless el clic se escucha.
 - **Sonido**: ni un clic. La regla 10 dice que el audio nuevo se genera con
   ElevenLabs, así que el menú se queda mudo hasta que haya sonidos horneados —
   antes que un `SfxLibrary` procedural de más.

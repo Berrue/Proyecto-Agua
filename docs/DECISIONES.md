@@ -485,6 +485,68 @@ pendiente el camino de vuelta (pausa y «volver al menú»), el menú es MUDO a 
 por prisa— y «Conectarse» pedirá un amigo en vez de una IP cuando exista el lobby de Steam
 (R2). `tests/menu_tests.tscn` (74 comprobaciones) y `tests/capture_menu.tscn`.
 
+### 2026-08-24 — El HUD de debug vive detrás de la Ñ
+
+**Contexto:** el HUD de debug estaba SIEMPRE encendido en el toybox y en la escena de
+tsunami: un panel que se come un tercio de la pantalla y, sobre todo, ocho atajos sueltos
+por encima del juego. `B` reflotaba el barco, `P` escribía un temporal entero, `1/2/3`
+tiraban un tsunami y `0` lo cancelaba — sin que nadie hubiera pedido nada de debug.
+
+**Decisión:** el menú nace CERRADO y se abre y se cierra con **Ñ**. Cerrado no responde
+ninguno de sus atajos, y además se apaga su `_process` (el readout se rehace entero cada
+frame para nadie).
+
+**Por qué:** la Ñ no la usa nada del juego y no está en el InputMap — el menú de opciones
+lee de ahí los controles que enseña, y la puerta del debug no es un control del juego.
+Gatear los atajos con la visibilidad, y no solo esconder el panel, es lo que hace que
+cerrar signifique algo: si `B` siguiera reflotando con el panel apagado, cerrarlo sería
+apagar la luz. Se reconoce por lo que la tecla ESCRIBE (`unicode` 241/209), por su etiqueta
+localizada y por su POSICIÓN física (la del `;` en un QWERTY US), porque Godot no tiene
+`KEY_Ñ` y quien no tenga Ñ en su teclado se quedaría sin menú sin un solo error que mirar.
+
+**Consecuencias:** la perilla de furia sigue siendo sagrada (CLAUDE.md), solo hay que
+llamar antes. El ratón NO se libera al abrir: sigue haciendo falta `ESC` para clicar los
+deslizadores, igual que antes. `tests/hud_launcher_tests.tscn` protege las tres vías de la
+tecla, que nace cerrado y que cerrado no lanza tsunamis.
+
+### 2026-08-24 — `Esc` no pausa, y el ping lo mide el patrón
+**Contexto:** el menú principal dejaba la partida como un viaje de ida (no había
+forma de volver) y no había manera de ver quién estaba conectado.
+
+**Decisión:** un autoload `Partida` con las dos pantallas de sesión — la tarjeta
+de `Esc` (Continuar / Volver al menú / Salir) y la lista de `TAB` con los pings.
+
+**Por qué así, y no de la forma normal:**
+- **`Esc` NO pausa el árbol.** En cooperativo es imposible (el mar de los demás
+  sigue) y en solitario se descarta a propósito, por dos motivos: que el juego se
+  comporte igual jugando solo que acompañado, y porque un `get_tree().paused`
+  dejaría muerto el HUD de debug del océano justo cuando el ratón está suelto —y
+  ese HUD es la herramienta de validación del juego (CLAUDE.md). De ahí también
+  el tamaño: la tarjeta es pequeña y centrada para dejar libre la columna
+  izquierda, que es donde vive ese HUD. La tarjeta lo DICE en vez de fingir: «el
+  mar no se detiene».
+- **`Esc` sigue soltando el ratón** y reutiliza la acción `toggle_mouse` que ya
+  existía, en vez de inventar una acción nueva sobre la misma tecla: dos acciones
+  en la misma tecla es un conflicto esperando a que alguien lo redescubra.
+- **El retardo lo mide el host y lo reparte a 1 Hz.** No es una preferencia de
+  arquitectura: un cliente solo tiene socket abierto contra el host, así que el
+  ping de los demás no lo puede saber ni aproximar. Se lee de ENet
+  (`PEER_ROUND_TRIP_TIME`), que ya lo mide para su control de flujo — un eco
+  propio sería medir dos veces lo mismo y peor. Con Steam (R2) devuelve «no se
+  sabe» en vez de inventar un cero.
+- **Los nombres se sanean AL RECIBIRLOS**, porque llegan de otra máquina: un
+  salto de línea parte la fila en dos y un nombre de 4 kB empuja el ping fuera de
+  la pantalla. Y el nombre de fábrica es el de la sesión del sistema operativo,
+  no «Marinero»: con el segundo, las dos ventanas del ciclo de trabajo se llaman
+  igual y la lista no sirve para lo único que tiene que servir.
+
+**Consecuencias:** `Net` gana `desconectar()` —la salida limpia que faltaba: solo
+se salía de la red por accidente o cerrando el proceso— y una clase pura más
+(`NetTripulacion`). El menú de pausa y la portada comparten `EstiloMenu`, que es
+la regla 11 aplicada al color y al margen. Queda pendiente que cambiar el nombre
+con la partida abierta reetiquete (hoy solo viaja al entrar) y que la lista diga
+también quién está en qué estación. `tests/partida_tests.tscn` (56 checks).
+
 ## Plantilla para decisiones nuevas
 
 ```

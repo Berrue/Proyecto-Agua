@@ -28,6 +28,11 @@ solo se ve en `git status`). Tras cualquier `--import`, comprobar
   24-ago-2026; ver `docs/MENU.md`), o saltárselo yendo directo al mundo con
   `--path . game/world/toybox.tscn` (juguete F1) / `game/world/tsunami.tscn`
   (secuencia dirigida con actos), que sigue siendo el ciclo de trabajo normal.
+- **El HUD de debug se abre y se cierra con `Ñ`** (o con esa MISMA posición de tecla,
+  el `;` de un QWERTY US). Nace cerrado desde el 24-ago-2026, y cerrado no responde
+  ninguno de sus atajos (`1/2/3` tsunami, `0` limpiar, `N` +3 h, `C` caña, `T` trueno,
+  `R` rayo, `P` parte, `B` reflotar): tenerlos sueltos sobre el juego era tener `B` y
+  `P` a un dedo de distancia en mitad de una partida. Ver `docs/DECISIONES.md`.
 - Tests (headless, salen con código ≠ 0 si algo falla — correr TODOS tras cada cambio):
 
 ```
@@ -56,6 +61,7 @@ solo se ve en `git status`). Tras cualquier `--import`, comprobar
 <godot> --headless --path . tests/voz_tests.tscn
 <godot> --headless --path . tests/microfono_tests.tscn
 <godot> --headless --path . tests/menu_tests.tscn
+<godot> --headless --path . tests/partida_tests.tscn
 <godot> --headless --path . tests/perf_tests.tscn
 ```
 
@@ -113,10 +119,12 @@ game/
                        defecto A PROPOSITO: Steam es una sesion por PC y se
                        llevaria por delante el ciclo de dos ventanas y el
                        loopback de `net_tests`)
-                       + tres clases PURAS y testeables, que es donde vive todo
+                       + cuatro clases PURAS y testeables, que es donde vive todo
                        lo que decide algo: NetMath (transformadas, reloj, códec
                        del lote), NetPorteo (el árbitro del agarre y las tablas
-                       de identidad) y NetLag (latencia simulada). Ver docs/RED.md.
+                       de identidad), NetLag (latencia simulada) y NetTripulacion
+                       (la lista de TAB: nombres saneados, orden estable y el
+                       retardo que solo el host puede medir). Ver docs/RED.md.
                        ⚠️ `Net` es un autoload SINGLETON: no se pueden levantar
                        host y cliente en un proceso, así que un RPC no se puede
                        testear — por eso los cuerpos de los RPC son envoltorios.
@@ -132,13 +140,22 @@ game/
                        con cuánta ganancia, 0-200 %). Ninguna necesita Steam.
   ui/                  `GameTypography`: LA ÚNICA fábrica de fuentes (regla 11).
                        PorteoHud: el prompt del porteo y la barra de lanzar.
+                       Autoload `Partida` (`partida.gd`): la sesión vista desde
+                       dentro — el menú de `Esc` (Continuar / Volver al menú /
+                       Salir) y la lista de tripulación de `TAB` con sus pings.
+                       Es autoload para que la tengan TODAS las escenas
+                       jugables sin acordarse de instanciarla, y `Esc` NO pausa
+                       nada (en coop no se puede, y el HUD de debug tiene que
+                       seguir alcanzable con el ratón suelto).
     menu/              El MENÚ PRINCIPAL (`run/main_scene`), con el mar de día
-                       de fondo: `MenuPrincipal` (la pantalla) + tres clases
+                       de fondo: `MenuPrincipal` (la pantalla) + cuatro clases
                        puras — `MenuNavegacion` (la pila de paneles),
                        `ControlesBasicos` (la ayuda de teclas leída del
-                       InputMap, que así no puede mentir) y `MenuAjustes` (lo
-                       que se recuerda en `user://ajustes.cfg`) — más
-                       `CamaraMenu`. Ver `docs/MENU.md`.
+                       InputMap, que así no puede mentir), `MenuAjustes` (lo
+                       que se recuerda en `user://ajustes.cfg`) y `EstiloMenu`
+                       (la paleta y las cajas, compartidas con el menú de Esc:
+                       la regla 11 aplicada al color) — más `CamaraMenu`.
+                       Ver `docs/MENU.md`.
 assets/fonts/          Las tres voces vendorizadas + su OFL (Anybody, Atkinson
                        Hyperlegible, Noto Sans Symbols).
 resources/             Balance editable: tiers de tsunami y de caña, cebos,
@@ -397,8 +414,23 @@ THIRD_PARTY.md         Licencias. Se actualiza EN EL MISMO COMMIT que la depende
   escrita a mano envejece en silencio) y el micrófono se elige con su medidor de
   entrada, guardado en `user://ajustes.cfg`. `tests/menu_tests.tscn` (74
   comprobaciones), `tests/capture_menu.tscn` para el look y `docs/MENU.md`.
-  Pendiente: volver al menú desde la partida, sonido (regla 10: ElevenLabs) y
-  el lobby de Steam.
+  Pendiente: sonido (regla 10: ElevenLabs) y el lobby de Steam.
+- **La partida como sesión (24-ago-2026):** el autoload `Partida`
+  (`game/ui/partida.gd`) cierra el viaje de ida del menú. `Esc` abre una tarjeta
+  con **Continuar / Volver al menú / Salir**, y `TAB` enseña **quién está a
+  bordo con su ping**. Dos cosas que NO son obvias: `Esc` **no pausa nada** —en
+  coop no se puede, y en solitario tampoco se hace para que el juego se comporte
+  igual solo que acompañado; además, pausar dejaría muerto el HUD de debug, que
+  es sagrado (por eso la tarjeta es pequeña, centrada y deja libre la columna
+  izquierda)—, y el ping **lo mide el host y lo reparte**, porque un cliente solo
+  tiene socket contra el host y el retardo de los demás no lo puede ni aproximar
+  (`ENetPacketPeer.PEER_ROUND_TRIP_TIME`, tabla a 1 Hz). Los nombres se presentan
+  al conectar y se sanean al recibirlos —vienen de otra máquina—; sin ajustes se
+  usa el de la sesión del sistema, que es lo único que distingue las dos ventanas
+  del ciclo de trabajo. `Net.desconectar()` es la salida limpia que faltaba, y
+  `EstiloMenu` es ahora la fábrica de paleta y cajas compartida por las dos
+  pantallas de menú. `tests/partida_tests.tscn` (56), `tests/capture_partida.tscn`,
+  `docs/MENU.md` y `docs/RED.md`.
 - **Sin commitear ahora mismo:** refactor viewmodel manos→un brazo (player.gd +
   fishing_tests.gd) y borrado de `tmp_down.*`.
 - **Grandes pendientes:** red R2 (Steam por SDR y voz por proximidad, detrás de

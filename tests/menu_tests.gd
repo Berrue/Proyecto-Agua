@@ -143,16 +143,29 @@ func _test_ajustes() -> void:
 	_check(is_equal_approx(float(vacio[MenuAjustes.CLAVE_VOLUMEN]), 100.0),
 		"y con la señal tal cual entra: 100 %")
 
-	_check(MenuAjustes.guardar("Cascos USB", 160.0, RUTA_AJUSTES) == OK,
+	_check(String(vacio[MenuAjustes.CLAVE_NOMBRE]).is_empty(),
+		"y sin nombre elegido, para que mande el que saco Net del sistema")
+
+	_check(MenuAjustes.guardar({
+			MenuAjustes.CLAVE_DISPOSITIVO: "Cascos USB",
+			MenuAjustes.CLAVE_VOLUMEN: 160.0,
+			MenuAjustes.CLAVE_NOMBRE: "  Patrona  ",
+		}, RUTA_AJUSTES) == OK,
 		"los ajustes se guardan")
 	var leido := MenuAjustes.cargar(RUTA_AJUSTES)
 	_check(String(leido[MenuAjustes.CLAVE_DISPOSITIVO]) == "Cascos USB",
 		"el aparato elegido sobrevive al cierre del juego")
 	_check(is_equal_approx(float(leido[MenuAjustes.CLAVE_VOLUMEN]), 160.0),
 		"y la ganancia tambien")
+	_check(String(leido[MenuAjustes.CLAVE_NOMBRE]) == "Patrona",
+		"y el nombre a bordo, ya saneado",
+		String(leido[MenuAjustes.CLAVE_NOMBRE]))
 
 	# Un .cfg editado a mano no puede acabar en la ganancia del bus.
-	MenuAjustes.guardar("Cascos USB", 9000.0, RUTA_AJUSTES)
+	MenuAjustes.guardar({
+		MenuAjustes.CLAVE_DISPOSITIVO: "Cascos USB",
+		MenuAjustes.CLAVE_VOLUMEN: 9000.0,
+	}, RUTA_AJUSTES)
 	_check(is_equal_approx(float(MenuAjustes.cargar(RUTA_AJUSTES)[MenuAjustes.CLAVE_VOLUMEN]),
 			MicrofonoModel.PCT_MAX),
 		"el volumen se acota al escribir, no solo al leer")

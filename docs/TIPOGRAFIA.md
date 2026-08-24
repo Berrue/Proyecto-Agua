@@ -51,6 +51,11 @@ familia sin tener las mismas métricas.
   impacto—, y toda la información (ayuda, teclas, aparatos de audio, avisos) va
   en Atkinson. Contorno y sombra en todo, más un velo en degradado: el fondo es
   el mar de verdad y cambia de espuma a sombra dentro de la misma ola.
+- `Partida` (el menú de `Esc` y la lista de `TAB`): la misma voz que la portada,
+  porque comparten fábrica (`EstiloMenu`: paleta, cajas y márgenes). En la lista
+  de tripulación el color hace de estado —verde, latón y coral según el
+  retardo— pero **el número va siempre delante**: el color acompaña, nunca es el
+  dato.
 - HUD de debug del océano: conserva por ahora la fuente técnica de Godot. No es
   UI final y sus columnas dependen de espacios manuales; forzarlo a la voz de
   marca empeoraría la herramienta.
