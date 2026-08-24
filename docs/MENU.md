@@ -6,7 +6,7 @@ el mar de día de fondo.
 - Escena: `game/ui/menu/menu_principal.tscn` — y desde ahora es el
   **`run/main_scene`** del proyecto. El juguete de F1 sigue abriéndose directo
   (`--path . game/world/toybox.tscn`) para el ciclo de trabajo de siempre.
-- Arnés: `tests/menu_tests.tscn` (70 comprobaciones).
+- Arnés: `tests/menu_tests.tscn` (74 comprobaciones).
 - Capturas para revisar el look: `tests/capture_menu.tscn` (necesita ventana y
   GPU, no se corre con `--headless`).
 
@@ -78,9 +78,14 @@ la escena que hay cargada:
 - `F9`/`F10` siguen funcionando en el menú, pero los atiende el menú (no `Net`)
   y abren la partida por el camino bueno.
 
-El cambio de escena se hace a mano (`current_scene` y luego `add_child`, el
-mismo orden que `change_scene_to_packed`) porque hace falta hacer algo
-justo después de que el mundo exista, y `change_scene_to_file` es diferido.
+El cambio de escena se hace a mano porque hace falta hacer algo justo después de
+que el mundo exista y `change_scene_to_file` es diferido. Y el orden importa:
+**primero `root.add_child(mundo)` y después `current_scene = mundo`**, porque el
+setter exige que la escena ya cuelgue de la raíz. Al revés falla en voz alta
+pero sin detener nada: el mundo aparecía igual y `current_scene` se quedaba
+apuntando a la escena vieja —ya liberada—, que es justo por donde censa
+`Net.hostear()` y por donde nacen los peces. Lo cazó `menu_tests` al comprobar
+que «Un jugador» abre el mundo de verdad.
 
 ## Opciones
 

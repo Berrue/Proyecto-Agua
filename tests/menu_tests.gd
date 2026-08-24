@@ -25,6 +25,7 @@ func _ready() -> void:
 	_test_controles()
 	_test_ajustes()
 	await _test_escena()
+	await _test_abrir_el_mundo()
 	_report()
 
 
@@ -276,6 +277,48 @@ func _test_escena() -> void:
 		"hay medidor de entrada: elegir microfono sin verlo saltar es adivinar")
 
 	escena.queue_free()
+
+
+# =============================================================================
+#  Que el boton de jugar abra el mundo
+# =============================================================================
+
+## Es EL camino del menu, y el unico que no cabia en la prueba anterior:
+## `_lanzar_mundo()` libera `get_tree().current_scene`, que en un arnes es el
+## arnes mismo. Se le da un titere que sacrificar y se mira lo que queda.
+func _test_abrir_el_mundo() -> void:
+	var arbol := get_tree()
+	var titere := Node.new()
+	titere.name = "TitereEscenaActual"
+	arbol.root.add_child(titere)
+	arbol.current_scene = titere
+
+	var escena := (load(RUTA_MENU) as PackedScene).instantiate() as Node3D
+	titere.add_child(escena)
+	for _i in 4:
+		await arbol.process_frame
+	var menu := escena.get_node_or_null("MenuPrincipal") as MenuPrincipal
+	if menu == null:
+		_check(false, "el menu existe para poder pulsar «Un jugador»")
+		return
+
+	# Diez minutos de portada antes de decidirse: la partida NO puede empezar
+	# ahi, porque la hora del dia es una funcion de este reloj.
+	Ocean.sim_time = 600.0
+	menu._un_jugador()
+	for _i in 8:
+		await arbol.process_frame
+
+	_check(arbol.current_scene != null and arbol.current_scene != titere,
+		"«Un jugador» cambia de escena de verdad")
+	_check(arbol.current_scene != null
+			and arbol.current_scene.scene_file_path == MenuPrincipal.RUTA_PARTIDA,
+		"y lo que abre es el mundo",
+		"" if arbol.current_scene == null else str(arbol.current_scene.scene_file_path))
+	_check(Ocean.sim_time < 5.0,
+		"la partida arranca con el reloj a cero, no a la hora que marcaba el menu",
+		"%.1f s" % Ocean.sim_time)
+	_check(not is_instance_valid(escena), "y el menu se va con la escena vieja")
 
 
 func _visibles(menu: MenuPrincipal) -> int:

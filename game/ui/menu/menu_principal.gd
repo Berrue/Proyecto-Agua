@@ -265,11 +265,14 @@ func _lanzar_mundo() -> void:
 	var vieja := arbol.current_scene
 	if vieja != null:
 		vieja.queue_free()
-	# El mismo orden que `change_scene_to_packed`: `current_scene` primero, para
-	# que lo que despierte en `_ready` ya vea la escena buena. `Net.hostear()`
-	# censa por ahí (`get_tree().current_scene`).
-	arbol.current_scene = mundo
+	# `current_scene` DESPUÉS de colgar el mundo de la raíz, y no antes: el
+	# setter exige que la escena YA sea hija de root (assert en
+	# `scene_tree.cpp`) y al revés falla en voz alta pero sin detener nada — el
+	# mundo aparecía y `current_scene` se quedaba apuntando a la escena vieja ya
+	# liberada, que es justo por donde censa `Net.hostear()` y por donde nacen
+	# los peces. Lo cazó `menu_tests`.
 	arbol.root.add_child(mundo)
+	arbol.current_scene = mundo
 
 
 ## Devuelve la furia que había antes de la portada. La partida tiene que empezar

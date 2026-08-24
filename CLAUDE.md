@@ -395,7 +395,7 @@ THIRD_PARTY.md         Licencias. Se actualiza EN EL MISMO COMMIT que la depende
   y carga el mundo en `connected_to_server`, para tener dónde decir «no hay
   nadie escuchando». En opciones, los controles se leen del InputMap (una lista
   escrita a mano envejece en silencio) y el micrófono se elige con su medidor de
-  entrada, guardado en `user://ajustes.cfg`. `tests/menu_tests.tscn` (70
+  entrada, guardado en `user://ajustes.cfg`. `tests/menu_tests.tscn` (74
   comprobaciones), `tests/capture_menu.tscn` para el look y `docs/MENU.md`.
   Pendiente: volver al menú desde la partida, sonido (regla 10: ElevenLabs) y
   el lobby de Steam.

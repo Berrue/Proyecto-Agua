@@ -483,7 +483,7 @@ juguete a mano (`--path . game/world/toybox.tscn`), que es lo que ya se hacía. 
 pendiente el camino de vuelta (pausa y «volver al menú»), el menú es MUDO a propósito
 —regla 10: el audio nuevo se genera con ElevenLabs, y no se va a colar un clic procedural
 por prisa— y «Conectarse» pedirá un amigo en vez de una IP cuando exista el lobby de Steam
-(R2). `tests/menu_tests.tscn` (70 comprobaciones) y `tests/capture_menu.tscn`.
+(R2). `tests/menu_tests.tscn` (74 comprobaciones) y `tests/capture_menu.tscn`.
 
 ## Plantilla para decisiones nuevas
 
