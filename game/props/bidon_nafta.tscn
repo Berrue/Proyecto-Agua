@@ -1,0 +1,54 @@
+[gd_scene load_steps=8 format=3]
+
+[ext_resource type="Script" path="res://game/props/bidon_nafta.gd" id="1_bidon"]
+[ext_resource type="Script" path="res://addons/ocean/physics/buoyancy_probe.gd" id="2_probe"]
+[ext_resource type="Resource" path="res://resources/gobierno/motor_nafta.tres" id="3_balance"]
+
+[sub_resource type="StandardMaterial3D" id="Mat_bidon"]
+albedo_color = Color(0.482, 0.176, 0.153, 1)
+metallic = 0.4
+roughness = 0.55
+
+[sub_resource type="BoxShape3D" id="Shape_bidon"]
+size = Vector3(0.34, 0.46, 0.18)
+
+[sub_resource type="BoxMesh" id="Mesh_cuerpo"]
+size = Vector3(0.34, 0.46, 0.18)
+
+[sub_resource type="BoxMesh" id="Mesh_asa"]
+size = Vector3(0.22, 0.04, 0.05)
+
+[node name="BidonNafta" type="RigidBody3D"]
+collision_layer = 1
+collision_mask = 1
+mass = 24.0
+center_of_mass_mode = 1
+center_of_mass = Vector3(0, -0.1, 0)
+script = ExtResource("1_bidon")
+nombre = "bidón de nafta"
+manos = 2
+balance = ExtResource("3_balance")
+drag_coefficient = 0.9
+angular_drag = 0.8
+max_submersion_depth = 0.5
+slam_threshold = 5.0
+tick_divisor = 2
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+shape = SubResource("Shape_bidon")
+
+[node name="Cuerpo" type="MeshInstance3D" parent="."]
+mesh = SubResource("Mesh_cuerpo")
+surface_material_override/0 = SubResource("Mat_bidon")
+
+[node name="Asa" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.25, 0)
+mesh = SubResource("Mesh_asa")
+surface_material_override/0 = SubResource("Mat_bidon")
+
+[node name="Sonda" type="Marker3D" parent="."]
+editor_description = "Volumen 0,030 m³ = desplaza 30 kg, y lleno pesa 24: FLOTA, pero justo. Vacío (3 kg) boya alto. Es física honesta y además se lee: un bidón que apenas asoma está lleno."
+script = ExtResource("2_probe")
+volume = 0.03
+height = 0.46
+drag_area = 0.12

@@ -226,6 +226,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 		_intentar_coger()
 	else:
+		if _interactuar_boca():
+			return
 		var g := _gancho_a_la_vista()
 		if g != null and g.libre() and objeto.colgable:
 			_colgar(g)
@@ -544,6 +546,48 @@ func _soporte_a_la_vista() -> SoporteCania:
 
 
 # =============================================================================
+#  Repostar: E con el bidon delante de la boca de llenado (docs/TIMON.md §5)
+# =============================================================================
+
+## E con el bidon en las manos y la boca delante: empieza o corta el vertido.
+##
+## Es un interruptor y no un "manten pulsado": volcar un bidon lleva varios
+## segundos, y obligar a sostener una tecla ese rato no añade nada y quita las
+## manos para reaccionar. Poder cortarlo a la mitad es lo que impide que sea un
+## lockout.
+##
+## Devuelve true solo si el gesto se hizo, para que una E fallida siga cayendo al
+## gancho y al soltar de siempre.
+func _interactuar_boca() -> bool:
+	var bidon := objeto as BidonNafta
+	if bidon == null:
+		return false
+	var boca := _boca_a_la_vista()
+	if boca == null:
+		return false
+	if boca.vertiendo():
+		boca.parar()
+		return true
+	if not boca.puede_verter(bidon):
+		# Se dice POR QUE no, que es la diferencia entre "no pasa nada" y "ya
+		# está lleno": uno parece una avería y el otro es informacion.
+		_avisar("el bidón está vacío" if bidon.vacio() else "el tanque ya está lleno")
+		return false
+	return boca.empezar(bidon)
+
+
+func _boca_a_la_vista() -> BocaLlenado:
+	if not _rayo.is_colliding():
+		return null
+	var n := _rayo.get_collider() as Node
+	while n != null:
+		if n is BocaLlenado:
+			return n as BocaLlenado
+		n = n.get_parent()
+	return null
+
+
+# =============================================================================
 #  El puesto de timon: E para agarrar la rueda (docs/TIMON.md §4)
 # =============================================================================
 
@@ -591,11 +635,14 @@ func _timon_a_la_vista() -> RuedaTimon:
 ## ¿Lleva este jugador la llave del motor? Vale en la mano o en el cinturon —que
 ## es donde vive—, porque agarrar la rueda deja las manos llenas y la llave solo
 ## puede estar en el cinturon a partir de ese momento.
-func _lleva_la_llave() -> bool:
-	if objeto != null and objeto.name == &"LlaveMotor":
+##
+## Publica para que el arnes pueda comprobarla: de esto depende que el barco
+## arranque, y una regla asi no puede quedarse sin prueba.
+func lleva_la_llave() -> bool:
+	if objeto != null and objeto.name == PuestoTimonModel.NOMBRE_LLAVE:
 		return true
 	for p in cinturon:
-		if p != null and p.name == &"LlaveMotor":
+		if p != null and p.name == PuestoTimonModel.NOMBRE_LLAVE:
 			return true
 	return false
 
@@ -604,7 +651,7 @@ func _lleva_la_llave() -> bool:
 func _dar_al_contacto() -> void:
 	if timon == null:
 		return
-	var motivo := timon.dar_al_contacto(_lleva_la_llave())
+	var motivo := timon.dar_al_contacto(lleva_la_llave())
 	if motivo != MotorModel.MotivoArranque.OK:
 		_avisar(MotorModel.texto_motivo(motivo))
 
@@ -922,7 +969,7 @@ func _texto_prompt() -> String:
 	if timon != null:
 		var g := timon.gobierno()
 		if g != null:
-			return PuestoTimonModel.texto_puesto(g.arrancado, _lleva_la_llave(),
+			return PuestoTimonModel.texto_puesto(g.arrancado, lleva_la_llave(),
 					g.muesca, g.litros <= 0.0)
 	# La bomba manda sobre todo lo demas: mientras la ocupas, lo unico que hay
 	# que saber es como bombear y como salir.
@@ -949,6 +996,25 @@ func _texto_prompt() -> String:
 	if objeto != null:
 		if _carga >= 0.0:
 			return "" # cargando: la barra ya lo cuenta, el texto solo taparia
+		# La llave EN LA MANO, delante del timon: el momento exacto en el que el
+		# jugador se atasca. La rueda son las dos manos, asi que con la llave
+		# cogida la E no agarra el timon —la suelta—, y el generico "Q al
+		# cinturón" no dice para que sirve. Aqui se dice el paso que falta.
+		if objeto.name == PuestoTimonModel.NOMBRE_LLAVE \
+				and _timon_a_la_vista() != null:
+			return "Q  guardar la llave  ·  con ella encima, el timón arranca"
+		# Con el bidón delante de la boca, lo único que importa es el vertido.
+		var bidon := objeto as BidonNafta
+		if bidon != null:
+			var boca := _boca_a_la_vista()
+			if boca != null:
+				if boca.vertiendo():
+					return "vertiendo…  ·  E  cortar  ·  %s" % bidon.resumen()
+				if bidon.vacio():
+					return "bidón vacío"
+				if not boca.puede_verter(bidon):
+					return "el tanque ya está lleno"
+				return "E  volcar el bidón  ·  %s" % bidon.resumen()
 		var linea := "E  soltar  ·  clic  lanzar"
 		var g := _gancho_a_la_vista()
 		if g != null and g.libre() and objeto.colgable:
@@ -968,6 +1034,12 @@ func _texto_prompt() -> String:
 		if not rt.estacion_libre():
 			return "lo lleva otro"
 		return "E  llevar el timón"
+	var bl := _boca_a_la_vista()
+	if bl != null:
+		# Con las manos vacías la boca no OFRECE nada, pero tiene que decir qué
+		# es: el día que el motor se pare por falta de nafta, hay que saber ya
+		# dónde se echa. Enseñarlo en la calma es la mitad de telegrafiar.
+		return "vertiendo…" if bl.vertiendo() else "boca de llenado  ·  trae un bidón"
 	var s := _soporte_a_la_vista()
 	if s != null and _rod != null:
 		if s.ocupado and _rod.soporte == s:

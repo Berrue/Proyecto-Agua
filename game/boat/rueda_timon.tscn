@@ -3,13 +3,13 @@
 [ext_resource type="Script" path="res://game/boat/rueda_timon.gd" id="1_rueda"]
 
 [sub_resource type="SphereShape3D" id="Shape_zona"]
-radius = 0.45
+radius = 0.35
 
 [node name="RuedaTimon" type="Node3D"]
 script = ExtResource("1_rueda")
 
 [node name="Zona" type="Area3D" parent="."]
-editor_description = "Solo para que la mira del jugador enganche la rueda. No colisiona con nada: el aro ya lo dibuja el GLB del barco (HelmWheel) y el casco ya tiene su HelmConsoleShape."
+editor_description = "Solo para que la mira del jugador enganche la rueda. No colisiona con nada: el aro ya lo dibuja el GLB del barco (HelmWheel) y el casco ya tiene su HelmConsoleShape. RADIO 0,35 = el del aro (0,32) y no un dedo más: con 0,45 la esfera se comía la consola entera y la llave del motor que hay encima dejaba de poder agarrarse, porque el prompt mira el timón antes que lo portable."
 monitoring = false
 monitorable = false
 

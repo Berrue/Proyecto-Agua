@@ -1,6 +1,11 @@
 # El puesto de timón, el motor y la nafta
 
-**Estado: PLAN (24-ago-2026). Sin una línea de código todavía.**
+**Estado (24-ago-2026): F1 a F4 HECHAS.** El barco navega, se gobierna desde el
+puesto y se queda sin nafta. `tests/gobierno_tests.tscn` = 197 comprobaciones.
+Lo que sigue: **F2b** (la anisotropía del casco, esperando a la sesión del
+hundimiento — es lo que hace que hoy el barco gire demasiado cerrado y frene
+demasiado corto, §12) y **F5** (la capa de feedback: manos, audio, crujidos).
+El detalle de cada fase, en §7; lo aprendido en cada una, de §11 en adelante.
 
 Fuente: la investigación «Puesto de Timón» (artifact
 `claude.ai/code/artifact/93f2b125-fbd1-42ec-9df1-3160b5ee1d57`, 24-ago-2026,
@@ -344,7 +349,7 @@ de editar; verificar que los cambios sobreviven.
 | **F2 — Gobierno integrado** ✅ **HECHA (24-ago-2026)** | `gobierno.gd` colgando del barco, con las tres superficies y las pruebas navales (118 comprobaciones). **La calibración de feel queda BLOQUEADA por F2b** — ver §12 | `fishing_boat.tscn` (nodo hijo nuevo) | Bajo (fue additivo; la otra sesión metió `AguaCubierta` en el mismo archivo sin choque) |
 | **F2b — Anisotropía** ⚠️ | Imprimir inercia automática real → forzar `inertia.y` → bajar `angular_drag`. El paso 1 del artifact, movido aquí | `fishing_boat.tscn` (propiedades del cuerpo) | **Coordinar**: hacerlo cuando el hundimiento de la otra sesión haya aterrizado, y recalibrar F2 después |
 | **F3 — El puesto** ✅ **HECHA (24-ago-2026)** | `puesto_timon_model.gd` + `rueda_timon.gd/.tscn` en el socket Helm, cuatro acciones nuevas en el InputMap y el enganche en `portador.gd`. 157 comprobaciones. Pendiente de F3: la aguja de nafta visible y la marca de rey como pieza de arte — ver §13 | `project.godot`, `fishing_boat.tscn`, `portador.gd` | Bajo (fue aditivo) |
-| **F4 — Nafta jugable** | Consumo real, tos, muerte, rearranque; `bidon_nafta` + estiba + boca de llenado; recarga en HUD debug | `game/props/`, HUD debug | Bajo (HUD debug lo tocan otros: releer) |
+| **F4 — Nafta jugable** ✅ **HECHA (24-ago-2026)** | `bidon_nafta` (Portable3D que flota y pesa lo que lleva) + `boca_llenado` en el costado de estribor + el ciclo completo quedarse seco → volcar → revivir. 197 comprobaciones. Ver §14 | `game/props/`, `game/boat/`, `portador.gd`, los dos mundos | Bajo (aditivo) |
 | **F5 — Feedback, junto** | Cadena de manos (muelles 40-60 de rigidez, saltar bajo 10 FPS), audio 3 capas + `trauma_estructural` (decae 3-8 s), ducking sidechain, FOV asimétrico (curva trauma^1,5), `set_drag()` con la aceleración lateral. **SFX por ElevenLabs** | `game/audio/`, viewmodel | Medio: el viewmodel tiene un refactor sin commitear de otra sesión |
 | **F6 — Anti-mareo** | **Inclinómetro de cardán en la consola** (la pieza con evidencia experimental, p=0,005), viñeta por velocidad angular, sliders (shake, FOV, balanceo heredado, viñeta) | Puesto + `camera_feedback.gd` | Bajo |
 | **F7 — Telegrafía** | `altura_futura_en_proa(s)` (muestrear donde ESTARÁ la proa) + escalera −12 s → +8 s del artifact. Golpe que quita control: < 0,5 s y recuperarla es acción del jugador | `gobierno.gd`, audio | Cero |
@@ -598,6 +603,48 @@ centrarían la rueda**. El timón habría dejado de responder en cooperativo sin
 solo error en consola. Arreglado antes de que existiera la red que lo sufriría, y
 con su test.
 
+### La llave se llevó la consola por delante
+
+Al probarlo salió que la llave del motor **no se podía agarrar**, y la culpa era
+de F3: la esfera con la que la mira del jugador engancha la rueda nació con radio
+0,45 y se comía la consola entera. La llave está apoyada ahí, y como el prompt
+mira el timón antes que lo portable, la `E` daba el timón siempre. Sin error, sin
+aviso — y sin llave no hay motor, así que el barco se quedaba sin poder arrancar
+por un radio de más.
+
+Dos arreglos, uno por cada lado del problema: la esfera baja a **0,35** (el radio
+del aro, 0,32, y ni un dedo más) y la llave se muda al **otro extremo de la
+consola** (`x = −0,42`), donde se ve al acercarse y no compite con la rueda.
+`gobierno_tests` lo custodia leyendo el `SceneState` de los dos mundos —sin
+instanciarlos, que levantar el toybox entero costaría más que el resto del arnés—
+y comprobando que la llave cae fuera de la zona.
+
+### Y el camino de la llave no se entendía
+
+Probándolo, el diseñador no consiguió arrancar el barco. **Nada estaba roto** —el
+camino existe y ahora tiene su test— pero no había forma de adivinarlo, que para
+la regla 8 es lo mismo que estar roto. La secuencia es: `E` coger la llave, `Q`
+guardarla en el cinturón, `E` agarrar el timón, `Q` dar al contacto. Tiene que
+pasar por el cinturón porque la rueda ocupa **las dos manos**, así que en cuanto
+la agarras la llave ya no puede estar en la mano.
+
+Lo que fallaba eran los carteles, en los dos momentos donde uno se atasca:
+
+- En la rueda sin la llave decía «falta la llave del motor» — nombraba el
+  problema y escondía la solución. Ahora dice **«falta la llave: llévala en el
+  cinturón»**.
+- Con la llave *en la mano* y mirando el timón, salía el texto genérico de
+  cualquier objeto («E soltar · clic lanzar · Q al cinturón»), y encima la `E`
+  ahí suelta la llave en vez de agarrar la rueda. Ahora dice **«Q guardar la
+  llave · con ella encima, el timón arranca»**.
+
+De paso, el nombre del nodo pasó a vivir en `PuestoTimonModel.NOMBRE_LLAVE` y no
+como texto suelto: de ese nombre depende que el barco arranque, así que si
+alguien renombra el nodo o le quita `en_cinturon`, el motor se vuelve
+inarrancable **sin un solo error** — el prompt diría «falta la llave» con la
+llave puesta. `gobierno_tests` comprueba que la escena, la tabla de identidad de
+red y esa constante siguen diciendo lo mismo.
+
 ### Lo que falta del puesto
 
 - **La aguja de nafta y la marca de rey como piezas de arte.** La lógica está
@@ -607,3 +654,65 @@ con su test.
 - **El sonido**, que por la regla 10 va por ElevenLabs: arranque, ralentí, la tos
   del tanque bajo, el trinquete de la rueda.
 - **Las manos en la rueda** (IK) son de F5, con el resto de la capa de feedback.
+
+---
+
+## 14 · F4: la nafta ya se juega (24-ago-2026)
+
+El ciclo entero existe y se puede recorrer: el tanque se vacía, el motor se para,
+y la salida es cruzar la cubierta con un bidón. `gobierno_tests` pasa de 166 a
+**197 comprobaciones**.
+
+### El bidón es un objeto, no un número
+
+`BidonNafta` es un `Portable3D` normal, y ahí está todo el diseño:
+
+- **Se lleva a dos manos.** Mientras cargás nafta no podés pescar, ni achicar, ni
+  llevar el timón. El déficit de manos es la moneda (DISENO §2), y la autonomía
+  se paga con ella.
+- **Pesa lo que lleva dentro** (`tara + litros × 0,84`), y `Portador.factor_lentitud`
+  lee ese peso. Ir a por nafta y volver con el bidón seco se *sienten* distinto,
+  sin una línea de código dedicada a eso.
+- **Flota**, incluso lleno — pero justo: desplaza 30 kg y lleno pesa 24. Vacío
+  boya alto. Es física honesta y encima se lee: un bidón que apenas asoma está
+  lleno. Lo que se hunde es la llave (DISENO §2); un bidón al fondo sería el
+  mismo castigo dos veces, y la segunda sin aviso.
+- **Cuánto trae sale de `MotorNaftaBalance.bidon_l`**, el mismo recurso contra el
+  que se cuadra el tanque. Un bidón y un tanque afinados por separado son un dial
+  que miente.
+
+### La boca de llenado
+
+Va en el pasillo de estribor, al costado de la cabina — donde va en un pesquero
+de verdad, y a media cubierta de donde están estibados los bidones: **repostar es
+cruzar el barco**, que es el punto.
+
+`E` empieza a verter y `E` otra vez lo corta. Es un interruptor y no un
+«mantené pulsado» porque volcar un bidón lleva varios segundos y obligar a
+sostener la tecla no añade nada; poder cortarlo a la mitad es lo que impide que
+sea un lockout — y un lockout es el «me robó» que prohíbe la regla 8. Alejarse
+también corta el chorro solo: seguir llenando desde tres metros sería nafta de la
+nada.
+
+La nafta **se conserva por construcción**: cada tick se le pide al bidón lo que de
+verdad tiene y se le entrega al tanque lo que de verdad cabe, así que no se puede
+fabricar ni perder. Con test.
+
+### Dos trampas que costaron una corrida cada una
+
+- **La sonda de flotación es un `Marker3D`, no un `Node3D`.** `BuoyancyProbe3D`
+  hereda de `Marker3D`, así que declarar el nodo como `Node3D` da *«Script
+  inherits from native type 'Marker3D'»* al importar y el bidón se queda sin
+  flotar.
+- **Una lambda de GDScript captura las locales POR VALOR.** El test recogía la
+  causa de la parada en un `var causa := ""` y leía siempre `""`, aunque la señal
+  llegara bien. Para sacar algo de una lambda hace falta un tipo por referencia
+  (un `Array` de caja) o un miembro de la clase.
+
+### Lo que queda de la nafta
+
+- **La aguja del puesto**, que sigue siendo lógica sin arte (`Gobierno.fraccion_tanque()`).
+- **El sonido**: el chorro al verter, y la tos del motor con el tanque bajo. Regla
+  10, o sea ElevenLabs.
+- **Comprarla** en la lonja (F9), que espera al inventario. Hasta entonces el
+  suministro son los dos bidones que el pesquero lleva estibados en cada mundo.

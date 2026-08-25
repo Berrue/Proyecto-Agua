@@ -1,4 +1,4 @@
-[gd_scene load_steps=26 format=3]
+[gd_scene load_steps=27 format=3]
 
 [ext_resource type="Script" path="res://addons/ocean/ocean_surface.gd" id="1_surface"]
 [ext_resource type="Shader" path="res://addons/ocean/shaders/ocean_surface.gdshader" id="2_shader"]
@@ -17,6 +17,7 @@
 [ext_resource type="PackedScene" path="res://game/props/radio.tscn" id="92_radio"]
 [ext_resource type="PackedScene" path="res://game/props/llave_motor.tscn" id="93_llave"]
 [ext_resource type="PackedScene" path="res://game/props/caja_herramientas.tscn" id="94_caja"]
+[ext_resource type="PackedScene" path="res://game/props/bidon_nafta.tscn" id="95_bidon"]
 [ext_resource type="PackedScene" path="res://game/props/bichero.tscn" id="95_bichero"]
 [ext_resource type="Script" path="res://game/world/rain_curtain.gd" id="91_curtain"]
 [ext_resource type="Script" path="res://game/world/rain_splashes.gd" id="92_splash"]
@@ -108,7 +109,13 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.55, 1.2, 2.0)
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.45, 1.72, 2.73)
 
 [node name="LlaveMotor" parent="." instance=ExtResource("93_llave")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.42, 1.68, 2.73)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.42, 1.68, 2.73)
+
+[node name="BidonNafta" parent="." instance=ExtResource("95_bidon")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.8, 1.5, -1)
+
+[node name="BidonNafta2" parent="." instance=ExtResource("95_bidon")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.8, 1.5, -1)
 
 [node name="CajaHerramientas" parent="." instance=ExtResource("94_caja")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.5, 1.15, -0.5)

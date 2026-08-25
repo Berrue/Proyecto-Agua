@@ -1,0 +1,48 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://game/boat/boca_llenado.gd" id="1_boca"]
+
+[sub_resource type="StandardMaterial3D" id="Mat_laton"]
+albedo_color = Color(0.604, 0.478, 0.235, 1)
+metallic = 0.75
+roughness = 0.35
+
+[sub_resource type="CylinderMesh" id="Mesh_boca"]
+top_radius = 0.055
+bottom_radius = 0.065
+height = 0.09
+radial_segments = 12
+rings = 1
+
+[sub_resource type="CylinderMesh" id="Mesh_tapa"]
+top_radius = 0.062
+bottom_radius = 0.062
+height = 0.018
+radial_segments = 12
+rings = 1
+
+[sub_resource type="SphereShape3D" id="Shape_zona"]
+radius = 0.26
+
+[node name="BocaLlenado" type="Marker3D"]
+editor_description = "Donde se vuelca el bidón. La tapa de latón asoma de la cubierta: tiene que VERSE desde lejos, porque quien va a por nafta ya está apurado."
+script = ExtResource("1_boca")
+
+[node name="Cuello" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.045, 0)
+mesh = SubResource("Mesh_boca")
+surface_material_override/0 = SubResource("Mat_laton")
+
+[node name="Tapa" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.099, 0)
+mesh = SubResource("Mesh_tapa")
+surface_material_override/0 = SubResource("Mat_laton")
+
+[node name="Zona" type="Area3D" parent="."]
+editor_description = "Solo para que la mira del jugador enganche la boca. RADIO AJUSTADO al cuello y ni un dedo más: una zona de más se come lo que tenga alrededor y ese objeto deja de poder agarrarse sin un solo error (pasó con la llave y el timón)."
+monitoring = false
+monitorable = false
+
+[node name="Forma" type="CollisionShape3D" parent="Zona"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.06, 0)
+shape = SubResource("Shape_zona")

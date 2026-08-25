@@ -72,6 +72,12 @@ func _ready() -> void:
 	_test_la_rueda_que_se_ve()
 	_test_el_cabo_de_trinca()
 	await _test_el_puesto_montado_en_el_barco()
+	await _test_la_llave_se_puede_agarrar()
+	_test_la_llave_se_puede_llevar_encima()
+	# F4: la nafta jugable.
+	await _test_el_bidon()
+	await _test_la_boca_de_llenado()
+	await _test_quedarse_seco_y_revivir()
 	_report()
 
 
@@ -1110,4 +1116,259 @@ func _test_el_puesto_montado_en_el_barco() -> void:
 	puesto.trinca_restante = 0.02
 	await _esperar(0.5)
 	_check(is_zero_approx(gob.mando), "vencido el cabo, la rueda vuelve a la via")
+	await _desmontar(barco)
+
+
+## Lee el transform que un `.tscn` DECLARA para un nodo, sin instanciar nada.
+##
+## Levantar el toybox entero —oceano, jugador, HUD— para leer una posicion
+## costaria mas que el resto del arnes junto. `SceneState` da exactamente lo que
+## el archivo dice.
+func _transform_declarado(ruta: String, nombre: String) -> Transform3D:
+	var ps := load(ruta) as PackedScene
+	if ps == null:
+		return Transform3D()
+	var st := ps.get_state()
+	for i in st.get_node_count():
+		if String(st.get_node_name(i)) != nombre:
+			continue
+		for p in st.get_node_property_count(i):
+			if String(st.get_node_property_name(i, p)) == "transform":
+				return st.get_node_property_value(i, p) as Transform3D
+	return Transform3D()
+
+
+func _test_la_llave_se_puede_agarrar() -> void:
+	print_rich("[b]La llave del motor tiene que poder agarrarse[/b]")
+	# EL FALLO QUE PROTEGE, y que ya paso: la zona con la que la mira del jugador
+	# engancha la rueda nacio con radio 0,45 y se comio la consola entera. La
+	# llave del motor esta APOYADA en esa consola, y como el prompt mira el timon
+	# antes que lo portable, la llave dejo de poder agarrarse — sin un error, sin
+	# un aviso, simplemente la E daba el timon. Y sin llave no hay motor, asi que
+	# el barco se quedaba sin arrancar por un radio de mas.
+	var barco := _montar_barco()
+	await _esperar(0.5)
+	var puesto := barco.get_node_or_null(
+			^"UpgradeSockets/Helm/RuedaTimon") as RuedaTimon
+	var forma := puesto.get_node_or_null(^"Zona/Forma") as CollisionShape3D \
+			if puesto != null else null
+	var esfera := forma.shape as SphereShape3D if forma != null else null
+	_check(esfera != null, "la rueda tiene su zona de mira")
+	if esfera == null:
+		await _desmontar(barco)
+		return
+	# En ejes del CASCO, para que no dependa de donde flote el barco al medir.
+	var centro := barco.to_local(forma.global_position)
+	for mundo in ["res://game/world/toybox.tscn", "res://game/world/tsunami.tscn"]:
+		var t_barco := _transform_declarado(mundo, "FishingBoat")
+		var t_llave := _transform_declarado(mundo, "LlaveMotor")
+		var en_casco := t_barco.affine_inverse() * t_llave.origin
+		var d := en_casco.distance_to(centro)
+		_check(d > esfera.radius,
+				"en %s la llave queda fuera de la zona del timon" % mundo.get_file(),
+				"a %.2f m del centro, y la zona mide %.2f" % [d, esfera.radius])
+	await _desmontar(barco)
+
+
+func _test_la_llave_se_puede_llevar_encima() -> void:
+	print_rich("[b]La llave tiene que poder llevarse encima[/b]")
+	# EL FALLO QUE PROTEGE: dar al contacto busca la llave POR EL NOMBRE DEL NODO
+	# y solo la encuentra si esta en la mano o en el cinturon. Con las dos manos
+	# en la rueda solo cabe el cinturon, asi que si alguien renombra el nodo o le
+	# quita `en_cinturon`, el motor deja de poder arrancar PARA SIEMPRE y no
+	# aparece ni un error: el prompt diria "falta la llave" con la llave puesta.
+	var ps := load("res://game/props/llave_motor.tscn") as PackedScene
+	_check(ps != null, "la escena de la llave carga")
+	if ps == null:
+		return
+	var llave := ps.instantiate() as Portable3D
+	_check(llave != null, "y es un Portable3D")
+	if llave == null:
+		return
+	_check(llave.name == PuestoTimonModel.NOMBRE_LLAVE,
+			"el nodo se llama como espera el contacto",
+			"se llama '%s' y se busca '%s'" % [llave.name,
+			PuestoTimonModel.NOMBRE_LLAVE])
+	_check(llave.en_cinturon,
+			"y cabe en el cinturón, que es el ÚNICO sitio donde puede estar con las manos en la rueda")
+	llave.queue_free()
+
+	# El mismo nombre lo usa la tabla de identidad de la red para nombrarla por el
+	# cable. Si los dos se separan, en red la llave seria otro objeto.
+	var en_red := false
+	for np in NetPorteo.CUERPOS_ESCENA:
+		if String(np).ends_with(String(PuestoTimonModel.NOMBRE_LLAVE)):
+			en_red = true
+	_check(en_red, "y la red la nombra igual (NetPorteo.CUERPOS_ESCENA)")
+
+	# Y el prompt tiene que DECIR dónde va: nombrar el problema y esconder la
+	# solución es la mitad de la regla 8, y es justo donde el jugador se atascó.
+	var sin_llave := PuestoTimonModel.texto_puesto(false, false,
+			MotorModel.Muesca.STOP, false)
+	_check(sin_llave.contains("cinturón"),
+			"sin la llave, el puesto dice DÓNDE se lleva", sin_llave)
+
+
+# =============================================================================
+#  F4: la nafta jugable — el bidón y la boca de llenado
+# =============================================================================
+
+func _test_el_bidon() -> void:
+	print_rich("[b]El bidón de nafta[/b]")
+	var ps := load("res://game/props/bidon_nafta.tscn") as PackedScene
+	_check(ps != null, "la escena del bidón carga")
+	if ps == null:
+		return
+	var bidon := ps.instantiate() as BidonNafta
+	_check(bidon != null, "y es un BidonNafta")
+	if bidon == null:
+		return
+	add_child(bidon)
+	await _esperar(0.1)
+
+	var mot := load(RUTA_TRES_MOTOR) as MotorNaftaBalance
+	# UN solo número: lo que trae un bidón sale del mismo balance contra el que
+	# se cuadra el tanque. Afinados por separado serían un dial que miente.
+	_check(is_equal_approx(bidon.capacidad(), mot.bidon_l),
+			"lo que cabe sale del balance, no de un número escrito aparte",
+			"%.0f l" % bidon.capacidad())
+	_check(is_equal_approx(bidon.litros, mot.bidon_l), "y nace lleno")
+	_check(not bidon.vacio(), "lleno no está vacío")
+
+	# FLOTA: la sonda tiene que desplazar más de lo que pesa lleno. Es la
+	# decisión de §0 —el drama de perder algo al agua ya lo cubre la llave, que
+	# sí se hunde— y aquí se comprueba con la física, no con un comentario.
+	var desplaza := 0.0
+	for p in bidon.probes:
+		desplaza += p.volume * FloatingBody3D.WATER_DENSITY
+	_check(desplaza > bidon.mass,
+			"FLOTA incluso lleno: desplaza más de lo que pesa",
+			"desplaza %.1f kg y pesa %.1f" % [desplaza, bidon.mass])
+
+	# Pesa lo que lleva dentro, y eso lo lee `Portador.factor_lentitud`: ir a por
+	# nafta y volver con el bidón seco tienen que SENTIRSE distinto.
+	var lleno_kg := bidon.mass
+	var sacados := bidon.sacar(bidon.capacidad())
+	_check(is_equal_approx(sacados, mot.bidon_l), "se vacía entero de una")
+	_check(bidon.vacio(), "y queda vacío")
+	_check(bidon.mass < lleno_kg * 0.5, "vacío pesa mucho menos",
+			"%.1f kg contra %.1f" % [bidon.mass, lleno_kg])
+	# Y de uno vacío no sale nada: la nafta no se fabrica.
+	_check(is_zero_approx(bidon.sacar(10.0)), "de un bidón vacío no sale nada")
+	_check(bidon.manos == 2,
+			"se lleva a DOS manos: cruzar la cubierta con él es la escena")
+	bidon.queue_free()
+
+
+func _test_la_boca_de_llenado() -> void:
+	print_rich("[b]La boca de llenado[/b]")
+	var barco := _montar_barco()
+	await _esperar(0.5)
+	var boca := barco.get_node_or_null(^"BocaLlenado") as BocaLlenado
+	var gob := barco.get_node_or_null(^"Gobierno") as Gobierno
+	_check(boca != null, "el pesquero trae su boca de llenado")
+	if boca == null or gob == null:
+		await _desmontar(barco)
+		return
+	var mot := gob.motor
+
+	var bidon := (load("res://game/props/bidon_nafta.tscn") as PackedScene) \
+			.instantiate() as BidonNafta
+	barco.add_child(bidon)
+	bidon.global_position = boca.global_position
+	await _esperar(0.1)
+
+	# Con el tanque lleno no se ofrece: un prompt que invita a algo que no va a
+	# pasar es feedback que miente.
+	gob.litros = mot.tanque_l
+	_check(not boca.puede_verter(bidon), "con el tanque lleno no hay nada que verter")
+
+	# Medio tanque: ahora sí, y el total a bordo se CONSERVA.
+	gob.litros = mot.tanque_l * 0.5
+	var total_antes := gob.litros + bidon.litros
+	_check(boca.puede_verter(bidon), "con sitio en el tanque, sí")
+	_check(boca.empezar(bidon), "y empieza a verter")
+	_check(boca.vertiendo(), "mientras cae, lo dice")
+	await _esperar(1.0)
+	_check(gob.litros > mot.tanque_l * 0.5, "el tanque sube")
+	_check(bidon.litros < mot.bidon_l, "y el bidón baja")
+	_check(absf((gob.litros + bidon.litros) - total_antes) < 0.01,
+			"sin fabricar ni perder nafta por el camino",
+			"antes %.3f, ahora %.3f" % [total_antes, gob.litros + bidon.litros])
+
+	# A ritmo visible, no de golpe: es lo que hace que repostar sea una decisión
+	# de CUÁNDO y no un botón.
+	var en_un_segundo := mot.bidon_l - bidon.litros
+	_check(en_un_segundo < mot.bidon_l,
+			"no se vacía de golpe: cae a ritmo",
+			"%.1f l en el primer segundo" % en_un_segundo)
+
+	# Se puede cortar a la mitad. Un gesto de varios segundos que no se puede
+	# abortar es un lockout, y un lockout es el "me robó" que prohíbe la regla 8.
+	boca.parar()
+	_check(not boca.vertiendo(), "se puede cortar a la mitad")
+	var congelado := gob.litros
+	await _esperar(0.5)
+	_check(is_equal_approx(gob.litros, congelado), "y cortado, deja de entrar")
+
+	# Alejarse corta el chorro solo: seguir llenando desde tres metros sería
+	# nafta de la nada.
+	boca.empezar(bidon)
+	bidon.global_position = boca.global_position + Vector3(0.0, 0.0, 10.0)
+	await _esperar(0.2)
+	_check(not boca.vertiendo(), "si el bidón se aleja, el chorro se corta solo")
+
+	bidon.queue_free()
+	await _desmontar(barco)
+
+
+func _test_quedarse_seco_y_revivir() -> void:
+	print_rich("[b]Quedarse seco, y volver[/b]")
+	# El ciclo entero de la decisión de §0: el motor se para de verdad, y la
+	# salida es el bidón. Hasta aquí cada pieza estaba probada por separado.
+	var barco := _montar_barco()
+	var gob := barco.get_node_or_null(^"Gobierno") as Gobierno
+	var boca := barco.get_node_or_null(^"BocaLlenado") as BocaLlenado
+	_al_timon(barco)
+	await _esperar(0.5)
+	if gob == null or boca == null:
+		_check(false, "sin gobierno o sin boca no hay ciclo")
+		await _desmontar(barco)
+		return
+
+	# ⚠️ La causa se recoge en un Array y no en un String suelto: una lambda de
+	# GDScript captura las locales POR VALOR, asi que asignarle a un `var causa`
+	# de fuera modifica la copia de la lambda y el test lee siempre "". El Array
+	# es una referencia, y esa si se comparte.
+	var causas: Array[String] = []
+	gob.motor_parado.connect(func(c: String) -> void: causas.append(c))
+
+	gob.arrancar()
+	gob.muesca = MotorModel.Muesca.AVANTE_TODA
+	# Las últimas gotas. A avante toda se van en menos de un segundo.
+	gob.litros = 0.02
+	await _esperar(2.0)
+	_check(not gob.arrancado, "con el tanque en seco, el motor se PARA de verdad")
+	_check(causas.has("sin nafta"), "y dice por qué",
+			"dijo %s" % str(causas))
+	_check(is_zero_approx(gob.litros), "el tanque no queda en negativo")
+	# Sin nafta no hay rearranque: la salida no es insistir con la llave.
+	_check(gob.arrancar() == MotorModel.MotivoArranque.SIN_NAFTA,
+			"y dar al contacto no lo revive")
+
+	# La salida es el bidón, y es porteo.
+	var bidon := (load("res://game/props/bidon_nafta.tscn") as PackedScene) \
+			.instantiate() as BidonNafta
+	barco.add_child(bidon)
+	bidon.global_position = boca.global_position
+	await _esperar(0.1)
+	_check(boca.empezar(bidon), "el bidón se puede volcar en la boca")
+	await _esperar(1.0)
+	boca.parar()
+	_check(gob.litros > 0.0, "y entra nafta", "%.1f l" % gob.litros)
+	_check(gob.arrancar() == MotorModel.MotivoArranque.OK,
+			"con nafta otra vez, el motor arranca")
+	_check(gob.arrancado, "y vuelve a andar")
+
+	bidon.queue_free()
 	await _desmontar(barco)

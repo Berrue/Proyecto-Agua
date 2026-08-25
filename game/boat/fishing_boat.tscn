@@ -16,6 +16,7 @@
 [ext_resource type="Resource" path="res://resources/gobierno/gobierno.tres" id="13_gobierno_balance"]
 [ext_resource type="Resource" path="res://resources/gobierno/motor_nafta.tres" id="14_motor_balance"]
 [ext_resource type="PackedScene" path="res://game/boat/rueda_timon.tscn" id="15_rueda_timon"]
+[ext_resource type="PackedScene" path="res://game/boat/boca_llenado.tscn" id="16_boca"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_hull"]
 size = Vector3(5.4, 1.6, 9.75)
@@ -145,6 +146,10 @@ editor_description = "Eje del timón visible; -Z local mira hacia el jugador. Se
 transform = Transform3D(-1, 0, 2.5351817e-06, 0, 1, 0, -2.5351817e-06, 0, -1, 0.25, 1.76, 3.085)
 
 [node name="RuedaTimon" parent="UpgradeSockets/Helm" instance=ExtResource("15_rueda_timon")]
+
+[node name="BocaLlenado" parent="." instance=ExtResource("16_boca")]
+editor_description = "En el pasillo de estribor, al costado de la cabina: es donde va en un pesquero de verdad, y deja el bidón a media cubierta de la bodega — o sea que repostar es cruzar el barco, que es el punto."
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.6, 1.05, 3)
 
 [node name="Sonar" type="Marker3D" parent="UpgradeSockets" unique_id=2077133951]
 editor_description = "Pantalla de sonar a babor del timón; -Z local mira hacia el jugador dentro de la cabina."

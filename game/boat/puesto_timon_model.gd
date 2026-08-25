@@ -35,6 +35,16 @@ const NADIE := 0
 const MANOS_TIMON := 2
 const MANOS_TOTALES := 2
 
+## Como se llama el nodo de la llave del motor.
+##
+## Vive aqui y no como texto suelto en `portador.gd` porque de este nombre
+## depende que el barco se pueda arrancar: si alguien renombra el nodo, dar al
+## contacto deja de encontrar la llave y el motor no prende NUNCA, sin un solo
+## error. Es el mismo nombre que `NetPorteo.CUERPOS_ESCENA` usa para
+## identificarla por el cable, y `gobierno_tests` comprueba que los tres —escena,
+## tabla de red y esta constante— siguen diciendo lo mismo.
+const NOMBRE_LLAVE := &"LlaveMotor"
+
 ## Vueltas completas de la rueda de tope a tope.
 ##
 ## Tres (o sea vuelta y media a cada banda) no es decoracion: es lo que hace
@@ -114,7 +124,12 @@ static func texto_puesto(arrancado: bool, lleva_llave: bool, muesca: int,
 	elif lleva_llave:
 		linea = "Q  dar al contacto"
 	else:
-		linea = "falta la llave del motor"
+		# No basta con decir que falta: hay que decir DONDE va. Con las dos manos
+		# en la rueda la llave solo puede estar en el cinturon, y ese paso —coger
+		# la llave, guardarla con Q y despues agarrar el timon— no lo adivina
+		# nadie. Un prompt que nombra el problema y esconde la solucion es la
+		# mitad de la regla 8.
+		linea = "falta la llave: llévala en el cinturón"
 	return linea + "  ·  A/D  timón  ·  W/S  máquina  ·  E  soltar"
 
 
