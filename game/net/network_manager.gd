@@ -1510,7 +1510,9 @@ func _indice_especie(cuerpo: Node3D) -> int:
 ## coop de amigos, que cualquiera pueda tirar un tsunami es una FEATURE.
 ## APPEND-ONLY: el valor viaja por el cable, asi que insertar en medio le cambia
 ## el numero a todo lo que venga detras y dos versiones dejarian de entenderse.
-enum Debug { FURIA, FURIA_YA, LLUVIA, HORA, LIMPIAR, REFLOTE, PARTE, PARTE_OFF }
+## ⚠️ APPEND-ONLY: el numero viaja por el cable en `_pedir_debug`.
+enum Debug { FURIA, FURIA_YA, LLUVIA, HORA, LIMPIAR, REFLOTE, PARTE, PARTE_OFF,
+	AGUA }
 
 
 ## Devuelve true si la peticion viajo (y el llamador no debe mutar nada).
@@ -1553,6 +1555,13 @@ func _aplicar_debug(que: int, valor: float) -> void:
 			_limpiar_eventos.rpc()
 		Debug.REFLOTE:
 			_reflotar_barco()
+		Debug.AGUA:
+			# El nivel lo escribe el HOST y viaja solo: `_estado_agua` ya manda las
+			# ocho celdas a 4 Hz, asi que los invitados ven subir el agua sin que
+			# haga falta un mensaje propio.
+			var agua := _agua_embarcada()
+			if agua != null:
+				agua.fijar_nivel(valor)
 		Debug.PARTE:
 			# El guion NO se puede regenerar en cada maquina a partir del techo:
 			# `generar_parte` lo escribe desde la furia y el reloj DE QUIEN LO

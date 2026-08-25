@@ -39,6 +39,9 @@ extends CanvasLayer
 @onready var _bolt_buttons: HBoxContainer = %BoltButtons
 @onready var _reduce_flash: CheckButton = %ReduceFlashToggle
 @onready var _parte_buttons: HBoxContainer = %ParteButtons
+@onready var _agua_slider: HSlider = %AguaSlider
+@onready var _agua_buttons: HBoxContainer = %AguaButtons
+@onready var _agua_label: Label = %AguaLabel
 @onready var _parte_label: Label = %ParteLabel
 
 var _parity_markers: Node3D
@@ -81,6 +84,12 @@ func _ready() -> void:
 
 	_build_tsunami_launcher()
 	_build_clima()
+	_build_agua()
+
+	# El menu nace CERRADO: la puerta es la Ñ. Se hace aqui y no en las dos
+	# escenas que lo instancian para que no puedan discrepar —y para que la
+	# tercera que venga lo herede sin que nadie se acuerde.
+	_abrir_menu(false)
 
 
 # =============================================================================
@@ -215,6 +224,57 @@ func _on_quitar_parte() -> void:
 	Ocean.limpiar_parte()
 
 
+## Llenar el barco a mano, que es la unica forma practica de MIRAR el agua: por
+## lluvia sola son once minutos hasta la alarma, y esperar una tormenta entera
+## para juzgar si un charco se lee como charco no es forma de trabajar.
+##
+## Los botones son los tres momentos que el jugador tiene que reconocer de un
+## vistazo, y por eso llevan el nombre de lo que se VE y no el numero: el dia que
+## alguien mueva los umbrales del balance, estos botones tienen que moverse con
+## ellos o dejan de enseñar lo que dicen.
+const AGUA_PRESETS: Array = [
+	["seco", 0.0],
+	["charco", 0.05],
+	["rodilla", 0.55],
+	["cintura", 0.85],
+]
+
+
+func _build_agua() -> void:
+	if _boat == null:
+		_agua_slider.editable = false
+		_agua_label.text = "AGUA EN CUBIERTA (sin barco en la escena)"
+		return
+	_agua_slider.value_changed.connect(_on_agua_slider_changed)
+	for preset: Array in AGUA_PRESETS:
+		var btn := Button.new()
+		btn.text = String(preset[0])
+		btn.custom_minimum_size = Vector2(62, 0)
+		btn.tooltip_text = "Deja el barco con el %.0f %% de agua." % (float(preset[1]) * 100.0)
+		btn.pressed.connect(_on_agua_preset.bind(float(preset[1])))
+		_agua_buttons.add_child(btn)
+
+
+func _on_agua_preset(nivel: float) -> void:
+	# Mover el deslizador dispara `value_changed`, asi que el mando y los botones
+	# no pueden discrepar.
+	_agua_slider.value = nivel
+
+
+func _on_agua_slider_changed(value: float) -> void:
+	if Net.pedir_debug(Net.Debug.AGUA, value):
+		return
+	var agua := _agua_del_barco()
+	if agua != null:
+		agua.fijar_nivel(value)
+
+
+func _agua_del_barco() -> AguaEmbarcada:
+	if _boat == null:
+		return null
+	return _boat.get_node_or_null(^"AguaEmbarcada") as AguaEmbarcada
+
+
 func _on_rain_slider_changed(value: float) -> void:
 	if Net.pedir_debug(Net.Debug.LLUVIA, value):
 		return
@@ -278,7 +338,53 @@ func _update_lead_label() -> void:
 	_lead_label.text = "AVISO: %.0f s hasta el impacto" % _lead_slider.value
 
 
-## Teclas 1..N para los tiers y 0 para limpiar.
+# =============================================================================
+#  La puerta: la tecla Ñ
+# =============================================================================
+
+## `ñ` y `Ñ` en Unicode. Godot no tiene constante para esta tecla.
+const UNICODE_ENE: int = 241
+const UNICODE_ENE_MAYUS: int = 209
+
+
+## Abre o cierra el menu entero.
+##
+## Cerrado no es "el panel esta invisible": es que la puerta esta cerrada y
+## dentro no hay nada encendido. Por eso tambien se apaga el `_process`: el
+## readout se rehace ENTERO cada frame con un RichTextLabel y no hay nadie
+## leyendolo; al abrir vuelve completo en el primer frame.
+func _abrir_menu(abierto: bool) -> void:
+	visible = abierto
+	set_process(abierto)
+	if abierto:
+		_sync_clima_controls()
+
+
+## ¿Es la tecla que abre el menu? Godot no tiene `KEY_Ñ` —el enum `Key` se
+## queda en los simbolos latinos basicos—, asi que hay que reconocerla por las
+## tres vias que puede dar un teclado, y ninguna sirve sola:
+##
+## - `unicode`: lo que la tecla ESCRIBE (ñ 241 / Ñ 209). Es la via normal en un
+##   teclado español, pero un evento sintetico (los arneses) puede no traerla.
+## - `key_label`: la etiqueta LOCALIZADA de la tecla, que en Godot puede ser
+##   cualquier Unicode. Aguanta cuando el evento no genera texto.
+## - `physical_keycode`: la POSICION de la Ñ española, que en un QWERTY US es la
+##   del `;`. Sin esto, quien no tenga Ñ en su teclado se quedaria sin menu de
+##   debug y sin forma de enterarse de por que.
+##
+## Es `static` para que se pueda probar sin levantar una escena: lo que se rompe
+## aqui —una tecla que en otra distribucion no llega— no grita, solo deja de
+## abrir.
+static func es_tecla_menu(tecla: InputEventKey) -> bool:
+	if tecla.unicode == UNICODE_ENE or tecla.unicode == UNICODE_ENE_MAYUS:
+		return true
+	if tecla.key_label == UNICODE_ENE or tecla.key_label == UNICODE_ENE_MAYUS:
+		return true
+	return tecla.physical_keycode == KEY_SEMICOLON
+
+
+## La Ñ abre y cierra; el resto de teclas son 1..N para los tiers y 0 para
+## limpiar.
 ##
 ## Los botones no bastan: durante el playtest el raton esta CAPTURADO porque
 ## estas de pie en la cubierta, asi que no puedes hacer clic sin soltarlo antes
@@ -286,7 +392,17 @@ func _update_lead_label() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if not (event is InputEventKey) or not event.is_pressed() or event.is_echo():
 		return
-	var key := (event as InputEventKey).keycode
+	var tecla := event as InputEventKey
+	if es_tecla_menu(tecla):
+		_abrir_menu(not visible)
+		get_viewport().set_input_as_handled()
+		return
+	# Con el menu cerrado sus atajos NO existen. Si respondieran, cerrarlo seria
+	# solo apagar la luz: `B` seguiria reflotando el barco y `P` escribiendo un
+	# temporal entero a un dedo de distancia en mitad de una partida.
+	if not visible:
+		return
+	var key := tecla.keycode
 	if key == KEY_0:
 		_clear_tsunami()
 		get_viewport().set_input_as_handled()

@@ -179,9 +179,28 @@ func _test_frame_uniforms() -> void:
 	Ocean.apply_frame_to_material(mat)
 	var rain: Variant = mat.get_shader_parameter(&"rain01")
 	var wdir: Variant = mat.get_shader_parameter(&"wind_dir")
-	_check(rain != null and typeof(rain) == TYPE_FLOAT, "el shader recibe rain01")
+	_check(rain != null and typeof(rain) == TYPE_FLOAT, "Ocean escribe rain01")
 	_check(wdir != null and (wdir as Vector2).length() > 0.99,
-		"el shader recibe wind_dir unitario")
+		"Ocean escribe wind_dir unitario")
+
+	# Y AHORA lo que de verdad importaba: que el shader los DECLARE.
+	#
+	# Los dos checks de arriba eran un falso verde de manual. `ShaderMaterial`
+	# guarda los parametros en su propio diccionario sin validarlos contra el
+	# shader, asi que pasaban igual con un shader que no declaraba ni uno — y
+	# eso es exactamente lo que pasaba: `apply_frame_to_material` llevaba meses
+	# escribiendo cuatro uniforms al vacio, la lluvia no tocaba el agua, y este
+	# test decia OK. Se lee el .gdshader como texto porque es la unica forma
+	# honesta de preguntar "¿existe este uniform?" sin un RenderingDevice.
+	var fuente := FileAccess.get_file_as_string("res://addons/ocean/shaders/ocean_surface.gdshader")
+	_check(fuente.length() > 100, "se puede leer el shader del oceano")
+	for nombre: String in ["rain01", "gust01", "wind_dir", "wind_drift"]:
+		_check(fuente.contains("uniform") and fuente.contains(nombre),
+			"el shader DECLARA %s (no basta con que Ocean lo escriba)" % nombre)
+	# El destello del rayo es un uniform GLOBAL: el cielo y el mar tienen que
+	# leer el mismo numero, o relampaguea uno y el otro no.
+	_check(fuente.contains("global uniform float lightning01"),
+		"y lee el global lightning01 (el rayo ilumina el AGUA, no solo el cielo)")
 
 
 ## El mezclador de clima: camas siempre sonando, volumenes como funcion pura

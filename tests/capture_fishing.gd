@@ -64,6 +64,19 @@ func _ready() -> void:
 	await _shoot("0b_pescador_caminando")
 	ap.queue_free()
 	skel.reset_bone_poses()
+
+	# --- 1c. LA CAÑA EN EL BARCO: asi empieza la partida desde el 24-ago-2026
+	# (clavada en el soporte de borda; hay que ir a por ella con E). Es la caña
+	# de verdad, con su hilo y su aparejo — no un palo gris de repuesto -------
+	if rod.esta_clavada():
+		var sop := rod.soporte as Node3D
+		ext_cam.global_position = sop.global_position + Vector3(1.0, 0.85, 1.5)
+		ext_cam.look_at(sop.global_position + Vector3(0.0, 0.75, 0.0), Vector3.UP)
+		for _i in 20:
+			await get_tree().process_frame
+		await _shoot("1a_cana_en_el_barco")
+		rod.retomar()
+
 	player.set_body_visible(false)
 	player_cam.current = true
 
@@ -71,6 +84,15 @@ func _ready() -> void:
 	for _i in 30:
 		await get_tree().process_frame
 	await _shoot("1_pov_lista")
+
+	# --- 2b. Cebada: la bola de cebo clavada en el anzuelo ---------------------
+	# El cebo solo se veia en el HUD de debug, o sea que en partida no se veia:
+	# esta lamina es la que dice si se lee de verdad en la mano.
+	rod.cebar(load("res://resources/cebos/cebo_vivo.tres") as TipoCebo,
+		FishingRod.CEBO_CARGAS_MAX)
+	for _i in 20:
+		await get_tree().process_frame
+	await _shoot("1b_pov_cebada")
 
 	# --- 3. Lanzada, esperando (boya + sedal) ---------------------------------
 	rod._charge = 0.75

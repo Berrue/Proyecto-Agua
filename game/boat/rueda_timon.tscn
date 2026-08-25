@@ -1,0 +1,17 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://game/boat/rueda_timon.gd" id="1_rueda"]
+
+[sub_resource type="SphereShape3D" id="Shape_zona"]
+radius = 0.45
+
+[node name="RuedaTimon" type="Node3D"]
+script = ExtResource("1_rueda")
+
+[node name="Zona" type="Area3D" parent="."]
+editor_description = "Solo para que la mira del jugador enganche la rueda. No colisiona con nada: el aro ya lo dibuja el GLB del barco (HelmWheel) y el casco ya tiene su HelmConsoleShape."
+monitoring = false
+monitorable = false
+
+[node name="Forma" type="CollisionShape3D" parent="Zona"]
+shape = SubResource("Shape_zona")

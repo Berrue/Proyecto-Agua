@@ -35,6 +35,69 @@ uniform float band_low : hint_range(-1.0, 1.0) = 0.02;
 uniform float band_high : hint_range(-1.0, 1.0) = 0.42;
 uniform float ambient_level : hint_range(0.0, 1.0) = 0.26;
 
+group_uniforms Clima;
+// `Ocean.apply_frame_to_material()` YA escribia estos cada frame — llevaban
+// meses cayendo al vacio porque el shader no los declaraba, asi que la lluvia
+// no tocaba el agua y nadie veia un error. Declararlos es literalmente todo lo
+// que faltaba: el cableado del otro lado ya estaba hecho y corriendo.
+uniform float rain01 : hint_range(0.0, 1.0) = 0.0;
+uniform float gust01 : hint_range(0.0, 1.0) = 0.5;
+uniform vec2 wind_dir = vec2(1.0, 0.0);
+uniform vec2 wind_drift = vec2(0.0, 0.0);
+
+// El destello del rayo, en unidades de BANDA de la rampa cuantizada, no en
+// brillo. Lo escribe LightningDirector como uniform GLOBAL, asi que el cielo
+// (sky.gdshader) y el mar leen exactamente el mismo numero en el mismo frame.
+// Sin esto el cielo relampagueaba y el mar —media pantalla— no se enteraba.
+global uniform float lightning01;
+
+// --- Tanda 2: las dos cosas que son GUSTO, no fisica ------------------------
+// Las dos entran en 0.0 a proposito. El moteado de "chispazos" de la fase A
+// murio en playtest por leerse como «puntos sin sentido», y estas dos son de
+// la misma familia visual: manchas de ruido sobre agua. Se entregan apagadas
+// con capturas al lado para que la decision se tome MIRANDO, con la misma
+// evidencia con la que se mato el moteado. Subirlas a 1.0 es todo lo que hace
+// falta si convencen.
+
+// CAT'S PAWS: las manchas oscuras que corren sobre el agua cuando pega una
+// racha. Son reales y son la primera señal de viento que se ve en el mar —
+// pero solo se leen con mar chico: en un temporal la superficie entera esta
+// rota y no hay nada que manchar.
+//
+// SE QUEDA EN 0: descartada mirando capturas (2026-08-24). A tope movia el
+// 6.8 % de los pixeles con una diferencia media de 1 sobre 255, o sea que hay
+// que buscarla para verla. El codigo se deja porque en cero no cuesta nada y
+// la idea es buena; lo que no funciona es esta implementacion.
+uniform float paw_amount : hint_range(0.0, 1.0) = 0.0;
+// ESTRIAS: las lineas de espuma que el viento estira en la direccion en que
+// sopla (Langmuir). Aparecen de furia 5-6 para arriba y son lo que dice
+// «esto ya no es oleaje, es temporal».
+// ENCENDIDA en 0.15 (decision del diseñador 2026-08-24, mirando capturas).
+// Es MUCHO mas bajo que el 0.3 que se probo: a 0.3 ya eran cintas anchas
+// cruzando la pantalla y a 1.0 el mar quedaba medio blanco. A 0.15 son cuatro
+// tiras finas que solo se leen en temporal, que es justo lo que se buscaba.
+uniform float streak_amount : hint_range(0.0, 1.0) = 0.15;
+
+
+// Ruido propio del clima. Vive AQUI y no en `ocean_waves.gdshaderinc` a
+// proposito: el include es el espejo EXACTO de la CPU (regla 3), y meterle
+// funciones que la CPU no tiene abriria la puerta a que alguien las use en el
+// desplazamiento y rompa la paridad sin enterarse. Esto es solo pintura.
+float clima_hash(vec2 p) {
+	return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+}
+
+float clima_noise(vec2 p) {
+	vec2 i = floor(p);
+	vec2 f = fract(p);
+	f = f * f * (3.0 - 2.0 * f);
+	float a = clima_hash(i);
+	float b = clima_hash(i + vec2(1.0, 0.0));
+	float c = clima_hash(i + vec2(0.0, 1.0));
+	float d = clima_hash(i + vec2(1.0, 1.0));
+	return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+
 group_uniforms SeaState;
 // Lo unico que Ocean escribe aqui es `fury01` y `height_scale`. Los rangos
 // siguen siendo del artista, que es lo que permite tocar el aspecto sin tocar
@@ -107,9 +170,65 @@ void fragment() {
 	// agua: parece nieve.
 	float pattern = ocean_foam_pattern(v_world.xz, ocean_time);
 	float foam = foam_raw * mix(1.0, 0.2 + 1.5 * pattern, foam_break_up);
+
+	// ESTRIAS DE VIENTO. El dominio se estira 16:1 A LO LARGO del viento, asi
+	// que el mismo ruido de siempre sale en tiras largas en vez de en manchas.
+	// Van ANTES de la cuantizacion —con un `max`, no sumando— para que salgan
+	// del mismo borde duro que el resto de la espuma: sumarlas despues daria
+	// tiras de alpha suave sobre un mar de bordes planos, y cantaria.
+	if (streak_amount > 0.001) {
+		vec2 a_favor = wind_dir;
+		vec2 de_traves = vec2(-wind_dir.y, wind_dir.x);
+		// Bandas ESTRECHAS (0.9 m de ancho, 60 de largo). Con 2.6 m salian
+		// cintas del ancho de una calle que cruzaban la pantalla entera.
+		vec2 s_uv = vec2(dot(v_world.xz, a_favor) / 60.0,
+			dot(v_world.xz, de_traves) / 1.6);
+		float sn = clima_noise(s_uv - vec2(ocean_time * 0.05, 0.0));
+		// ^3 afila: deja pocas tiras marcadas en vez de un rayado parejo, que
+		// es como se ven de verdad (Langmuir hace calles, no textura).
+		float sraw = pow(sn, 3.0) * smoothstep(0.5, 0.85, fury01);
+		// El nivel mueve el UMBRAL, o sea CUANTA superficie se raya — no cuan
+		// blanca queda. Escalando la magnitud, como estaba antes, el efecto era
+		// todo-o-nada: por debajo de ~0.39 no cruzaba el corte duro de la
+		// espuma y no se veia NADA (medido: 0.0 % de pixeles), y por encima se
+		// pintaban autopistas blancas. Un knob con dos posiciones no es un knob.
+		float umbral = mix(0.60, 0.03, streak_amount);
+		// Y se pintan en la banda BAJA de espuma (0.75 -> 0.7 tras cuantizar),
+		// no en la alta: una estria es agua rayada, no una cresta rompiendo.
+		// Se PROBO atarlas a `foam_raw` (la idea correcta en teoria: una estria
+		// es espuma estirada, sin espuma no hay estria) y MATA el efecto por
+		// completo — medido: 0.0 % de pixeles con dos umbrales distintos.
+		// Motivo: a furia 8 `foam_bias` vale ~0.43 y el jacobiano ronda 1.0-1.2,
+		// asi que `foam_raw` es cero salvo en las crestas que rompen de verdad,
+		// que son cuatro pixeles. La puerta correcta seria la PENDIENTE de la
+		// ola, no su rotura; queda anotado por si alguien lo retoma.
+		if (sraw > umbral) {
+			foam = max(foam, 0.75);
+		}
+	}
+
 	// Cuantizada con borde duro. Nada de alpha suave: el lenguaje visual es de
 	// ilustracion plana, no de fotografia.
 	foam = step(0.62, foam) * 0.7 + step(1.02, foam) * 0.3;
+
+	// CAT'S PAWS. La mancha viaja con `wind_drift`, que es el avance acumulado
+	// del patron sobre el agua que Ocean ya integra y ya empuja aqui: por eso
+	// las manchas CORREN en la direccion del viento en vez de quedarse
+	// clavadas al mundo.
+	//
+	// Doble puerta de furia: aparecen con la primera brisa (furia ~0.5) y se
+	// apagan pasada la 5-6, porque con el mar ya roto no hay superficie lisa
+	// que rizar y quedarian como suciedad sobre la espuma.
+	float paw = 0.0;
+	if (paw_amount > 0.001) {
+		float f10 = fury01 * 10.0;
+		float puerta = smoothstep(0.4, 1.2, f10) * (1.0 - smoothstep(4.5, 6.0, f10));
+		vec2 paw_uv = (v_world.xz - wind_drift) / 26.0;
+		// Mascara ANCHA: con 0.60-0.78 solo se pintaba ~1 de cada 4 celdas y el
+		// efecto a tope movia el 2.6 % de los pixeles, o sea nada.
+		paw = smoothstep(0.48, 0.70, clima_noise(paw_uv))
+			* puerta * gust01 * paw_amount;
+	}
 
 	// --- Normales ------------------------------------------------------------
 	vec3 flat_world = normalize(cross(dFdx(v_world), dFdy(v_world)));
@@ -129,9 +248,19 @@ void fragment() {
 	// Y tambien se apaga BAJO LA ESPUMA: el agua rota es difusa, asi que
 	// mantener ahi el relieve fino hace que la rampa cuantizada parpadee sobre
 	// el blanco.
+	// La lluvia APLANA el relieve fino. Millones de gotas picando la superficie
+	// destruyen el rizado capilar que produce el centelleo: por eso un mar bajo
+	// aguacero se lee mate y "pesado" aunque las olas grandes sigan iguales.
 	float detail_amount = mix(detail_calm, detail_storm, fury01)
 		* lod_fade
-		* (1.0 - 0.85 * foam);
+		* (1.0 - 0.85 * foam)
+		* mix(1.0, 0.4, rain01)
+		// La mancha ES rizado, asi que algo mas de relieve fino — pero POCO.
+		// Con 1.8 (o sea x2.8) las normales se perturbaban tanto que el agua
+		// saltaba a la banda de cresta y las manchas salian TURQUESA BRILLANTE:
+		// exactamente lo contrario de una cat's paw, que es una sombra. El
+		// efecto tiene que venir del color, no de romper el sombreado.
+		* (1.0 + 0.45 * paw);
 	vec2 dgrad = ocean_detail_gradient(v_world.xz, ocean_time) * detail_amount;
 	n_world = normalize(n_world + vec3(-dgrad.x, 0.0, -dgrad.y));
 
@@ -147,6 +276,23 @@ void fragment() {
 	// momento en que mas falta hace leer el agua. El volumen del muro lo
 	// comunican su silueta y su espuma, no el color.
 	float h = clamp((v_world.y - v_event_height) * height_scale + 0.5, 0.0, 1.0);
+	// EL DESTELLO DEL RAYO promociona la banda de COLOR, no la de luz.
+	//
+	// Empezo mal: bajando los umbrales de `light()`. Medido con un A/B del
+	// mismo mar (`flash_off`/`flash_on` de capture_weather), eso movia el brillo
+	// del agua un -0.5 %, o sea nada — porque bajar un umbral solo ilumina lo
+	// que estaba POR DEBAJO, y de dia el mar mira hacia arriba con el sol
+	// arriba: ya esta en la banda mas alta y no hay ninguna por encima.
+	//
+	// Aqui si funciona, y ademas es lo que «promocion de banda» queria decir:
+	// el agua se pinta un escalon mas clara de su propia rampa (hacia cresta),
+	// una sola vez por pixel, sin depender del angulo del sol ni de que haya
+	// sol. Y sigue siendo un salto DISCRETO y contable, que es lo que hace
+	// verificable el limite fotosensible (docs/CLIMA.md §2.5).
+	h = clamp(h + clamp(lightning01, 0.0, 1.0) * 0.22, 0.0, 1.0);
+	// Y la mancha OSCURECE: una superficie rizada devuelve menos luz al ojo,
+	// que es exactamente por lo que en el mar se ven como sombras corriendo.
+	h = clamp(h - 0.5 * paw, 0.0, 1.0);
 	vec3 col = mix(deep_color, shallow_color, smoothstep(0.35, 0.55, h));
 	col = mix(col, crest_color, smoothstep(0.62, 0.78, h));
 	col = mix(col, foam_color, foam);
@@ -164,16 +310,33 @@ void light() {
 	float ndl = dot(NORMAL, LIGHT);
 	float w = fwidth(ndl) * 1.5 + 0.005;
 
-	float b1 = smoothstep(band_low - w, band_low + w, ndl);
-	float b2 = smoothstep(band_high - w, band_high + w, ndl);
+	// El destello tambien baja los umbrales de la rampa de luz. Esto SOLO hace
+	// algo donde el agua esta a contraluz o de noche (superficies por debajo
+	// del umbral); de dia con el sol alto no aporta nada, y por eso el trabajo
+	// de verdad lo hace la promocion de la rampa de COLOR en `fragment()`.
+	// Se mantiene porque es justo la cara nocturna del mismo efecto.
+	float flash = clamp(lightning01, 0.0, 1.0);
+	float lo = band_low - flash * 0.55;
+	float hi = band_high - flash * 0.55;
+
+	float b1 = smoothstep(lo - w, lo + w, ndl);
+	float b2 = smoothstep(hi - w, hi + w, ndl);
 	float ramp = ambient_level + 0.38 * b1 + 0.28 * b2;
 
 	DIFFUSE_LIGHT += ALBEDO * LIGHT_COLOR * ATTENUATION * ramp;
 
 	// Destello del sol estampado como blob duro, no como lobulo difuso.
+	//
+	// LA LLUVIA LO MATA, y es la señal numero uno de "esta lloviendo sobre el
+	// mar" (docs/CLIMA.md §1.3): la superficie picada deja de ser un espejo, y
+	// el reflejo del sol se deshace en mil trozos demasiado chicos para verse.
+	// Se encoge el blob (umbral mas alto = menos angulo lo alcanza) Y se baja
+	// su intensidad: solo bajar el brillo dejaria un parche gris del tamaño
+	// del sol, que es peor que no tener nada.
 	vec3 half_vec = normalize(LIGHT + VIEW);
 	float ndh = dot(NORMAL, half_vec);
 	float sw = fwidth(ndh) * 1.5 + 0.002;
-	float spec = smoothstep(0.982 - sw, 0.982 + sw, ndh);
-	SPECULAR_LIGHT += spec * LIGHT_COLOR * ATTENUATION * 0.6;
+	float umbral = mix(0.982, 0.994, rain01);
+	float spec = smoothstep(umbral - sw, umbral + sw, ndh);
+	SPECULAR_LIGHT += spec * LIGHT_COLOR * ATTENUATION * 0.6 * (1.0 - 0.7 * rain01);
 }

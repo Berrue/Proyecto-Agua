@@ -243,6 +243,9 @@ func _test_soporte_y_cana() -> void:
 	var rod := ROD.instantiate() as FishingRod
 	add_child(rod)
 
+	# El pivote se coge ANTES: al clavarla deja de colgar de la caña (se muda al
+	# soporte), asi que `rod.get_node("RodPivot")` ya no lo encuentra.
+	var pivote := rod.get_node(^"RodPivot") as Node3D
 	var zona := s.get_node_or_null(^"Zona") as Area3D
 	_check(zona != null and zona.collision_layer != 0,
 		"la Zona del soporte es visible para la mira del portador")
@@ -251,7 +254,8 @@ func _test_soporte_y_cana() -> void:
 	_check(rod.clavar_en(s), "la caña en reposo se deja clavar")
 	_check(rod.esta_clavada(), "y sabe que esta clavada")
 	_check(s.ocupado, "el soporte queda ocupado")
-	_check(s.get_node(^"CanaVisual").visible, "y muestra la caña clavada")
+	_check(pivote.get_parent() == s.cuna(),
+		"y la caña DE VERDAD se muda al soporte (no hay una gris de repuesto)")
 	_check(not rod._rod_input_ready(), "clavada, la caña no escucha el click")
 	_check(not rod.clavar_en(s2), "no se clava en dos soportes a la vez")
 
@@ -259,7 +263,7 @@ func _test_soporte_y_cana() -> void:
 	rod.retomar()
 	_check(not rod.esta_clavada(), "retomarla la devuelve a la mano")
 	_check(s.libre(), "y libera el soporte")
-	_check(not s.get_node(^"CanaVisual").visible, "que esconde su caña visual")
+	_check(pivote.get_parent() == rod, "y la caña se vuelve contigo")
 	_check(rod._rod_input_ready(), "en la mano vuelve a escuchar el click")
 
 	rod.queue_free()
@@ -329,8 +333,9 @@ func _test_llave_se_hunde_radio_flota() -> void:
 	await get_tree().process_frame
 
 
-## La caña clavada (o las manos cargadas) guardan el viewmodel: el pivote se
-## esconde solo. La boya y el sedal son top_level y no dependen de el.
+## Clavada, la caña NO se esconde: se ve en el barco, que es donde esta. Lo que
+## se apaga es el brazo de primera persona — un brazo saliendo del soporte seria
+## un fantasma. Con las manos cargadas por el porteo si se guarda entera.
 func _test_cana_se_guarda_clavada() -> void:
 	var s := SOPORTE.instantiate() as SoporteCania
 	add_child(s)
@@ -345,12 +350,14 @@ func _test_cana_se_guarda_clavada() -> void:
 	rod.clavar_en(s)
 	await get_tree().physics_frame
 	await get_tree().physics_frame
-	_check(not pivote.visible, "caña clavada: el viewmodel se guarda")
+	_check(pivote.visible and pivote.get_parent() == s.cuna(),
+		"caña clavada: se ve, pero colgando del barco")
 
 	rod.retomar()
 	await get_tree().physics_frame
 	await get_tree().physics_frame
-	_check(pivote.visible, "retomada: el viewmodel vuelve")
+	_check(pivote.visible and pivote.get_parent() == rod,
+		"retomada: vuelve al viewmodel")
 
 	rod.queue_free()
 	s.queue_free()

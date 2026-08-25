@@ -1232,7 +1232,39 @@ carriles, cobertura de tests, veracidad de los docs) + un refutador por lente + 
 completitud: **33 hallazgos brutos, 26 sobrevivieron la refutación**. Los de red se arreglaron en
 el momento (ver abajo). Esto es lo que queda **abierto y conocido**:
 
-- 🔴 **El shader del océano NO declara `rain01`, `gust01`, `wind_dir` ni `wind_drift`**, y
+> **✅ CERRADO (24-ago-2026).** El shader ya declara los cuatro uniforms y lee `lightning01`.
+> La lluvia apaga y encoge el brillo del sol (la señal nº 1 de §1.3) y aplana el rizado fino; el
+> rayo promociona la banda de **color** del agua.
+>
+> **Tanda 2, decidida mirando capturas (24-ago-2026):** las **estrías entran a `0.15`** y las
+> **cat's paws se quedan en `0`**. Las dos siguen en el código con su uniform, así que cambiar de
+> opinión es cambiar un número. El proceso importa tanto como el resultado:
+> - Las estrías a 0,30 ya eran cintas anchas cruzando la pantalla y a 1,0 dejaban el mar medio
+>   blanco (50,8 % de los píxeles). A **0,15** son cuatro tiras finas que siguen la cara de la ola
+>   y solo se leen en temporal: 2,4 % de píxeles. El nivel controla **cuánta superficie se raya**,
+>   no cuán blanca queda — escalando la magnitud el efecto era un interruptor, no un dial (por
+>   debajo de ~0,39 no cruzaba el corte duro de la espuma y no se veía **nada**, medido 0,0 %).
+> - Las cat's paws a tope mueven el 6,8 % de los píxeles con diferencia media de **1 sobre 255**:
+>   hay que buscarlas para verlas. La idea es buena y la implementación no; queda en cero.
+> - Se probó atar las estrías a `foam_raw` (correcto en teoría: una estría es espuma estirada) y
+>   **mata el efecto entero** — a furia 8 `foam_bias` vale ~0,43 y el jacobiano ronda 1,0-1,2, así
+>   que `foam_raw` es cero salvo en las crestas que rompen. La puerta correcta sería la
+>   **pendiente** de la ola, no su rotura. Anotado en el shader por si alguien lo retoma. `weather_tests` comprueba ahora que el shader los
+> DECLARE leyendo el `.gdshader` — el check anterior era un falso verde, porque `ShaderMaterial`
+> guarda parámetros sin validarlos contra el shader.
+>
+> **Dos errores que costaron tres mediciones**, los dos anotados porque el que caiga aquí después
+> va a tropezar igual: (1) bajar los umbrales de banda en `light()` **no ilumina nada de día** —
+> solo sube lo que estaba POR DEBAJO del umbral, y con el sol alto el mar ya está en la banda más
+> alta; la promoción tiene que ir en la rampa de **color**, en `fragment()`. (2) El A/B para
+> medirlo daba «+0,0 %» porque el `_process` del `LightningDirector` **reescribe `lightning01`
+> cada frame** (0,0 cuando no hay rayo) y pisaba la prueba antes de dibujar: hay que apagar el
+> director para medir. Con las dos cosas arregladas, el destello sube el agua un **+7,8 %**
+> medido — por debajo del 10 % que cuenta como *flash* en XAG 118, o sea que el mar no añade
+> pulsos al presupuesto fotosensible. El A/B (`flash_off`/`flash_on` en `capture_weather`) queda
+> como regresión permanente.
+
+- ~~🔴 **El shader del océano NO declara `rain01`, `gust01`, `wind_dir` ni `wind_drift`**~~, y
   `Ocean.apply_frame_to_material()` se los escribe igual, cada frame, al vacío. Verificado a mano
   y medido por un agente en un proyecto aislado: 27 uniforms declarados y ninguno de clima.
   Consecuencia: **la lluvia no toca la superficie del agua** (ni espuma, ni brillo especular, ni

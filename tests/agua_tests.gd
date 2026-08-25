@@ -59,6 +59,8 @@ func _ready() -> void:
 	await _test_en_calma_no_entra_agua()
 	await _test_lo_que_entra_es_lo_que_dice_el_balance()
 	await _test_equilibrio_de_dificultad()
+	await _test_el_agua_no_inclina_el_barco()
+	await _test_la_piscina_se_ve()
 	await _test_naufragio_y_reflote()
 	await _test_el_oleaje_no_entierra()
 	await _test_el_tsunami_si_entierra()
@@ -441,6 +443,168 @@ func _test_equilibrio_de_dificultad() -> void:
 ## tick despues del teleport calcula decenas de m/s de entrada y dispara un slam
 ## con su chapuzon y su espuma. Un chapuzon que no ocurrio es feedback que miente
 ## (regla 8), asi que el test escucha la señal y exige silencio.
+## El agua se VE, y esa es la unica razon de ser del paso 2.
+##
+## Al quitar la escora el sistema se quedo mudo: hundirse un palmo no se nota. El
+## plano de cubierta es lo que lo devuelve a ser legible, y lo que este test
+## protege NO es que exista un MeshInstance3D — es la CALIBRACION, que es lo que
+## de verdad hace que el jugador entienda sin mirar ningun numero:
+##
+##   charco que moja los pies -> "entra agua"
+##   por la rodilla           -> suena la alarma
+##   por la cintura           -> pierdes el barco
+##
+## Si alguien mueve los umbrales del balance y no mueve la curva, el agua deja de
+## coincidir con el momento de alarmarse y el indicador empieza a mentir.
+func _test_la_piscina_se_ve() -> void:
+	var balance := load(RUTA_BALANCE) as AguaEmbarcadaBalance
+	if balance == null:
+		_check(false, "el balance del agua carga", RUTA_BALANCE)
+		return
+	await get_tree().physics_frame
+	Ocean.clear_events()
+	Ocean.set_fury_immediate(0.0)
+
+	var barco := _instanciar_barco()
+	barco.global_position = Vector3(0, 2, 0)
+	var piscina := barco.get_node_or_null(^"AguaCubierta") as AguaCubierta
+	var agua := barco.get_node_or_null(^"AguaEmbarcada") as AguaEmbarcada
+	if piscina == null or agua == null:
+		_check(false, "el barco trae su AguaCubierta y su AguaEmbarcada")
+		_liberar_ya(barco)
+		return
+	for _i in 200:
+		await get_tree().physics_frame
+
+	# --- seco: no se dibuja nada ---
+	_check(not piscina.visible,
+		"con el barco seco no hay agua que enseñar")
+
+	# --- la calibracion: los tres momentos que el jugador tiene que leer ---
+	var charco: float = piscina.curva_profundidad.sample_baked(0.05)
+	var alarma: float = piscina.curva_profundidad.sample_baked(balance.umbral_alarma)
+	var naufragio: float = piscina.curva_profundidad.sample_baked(balance.umbral_naufragio)
+
+	_check(charco > 0.01 and charco < 0.10,
+		"al 5 %% es un charco que moja los pies, no una lamina invisible",
+		"%.3f m" % charco)
+	_check(alarma > 0.30 and alarma < 0.60,
+		"cuando suena la alarma, el agua llega por la RODILLA",
+		"%.2f m con el umbral en %.2f" % [alarma, balance.umbral_alarma])
+	_check(naufragio > 0.85,
+		"y al naufragar, por la CINTURA: se ve venir sin mirar un numero",
+		"%.2f m con el umbral en %.2f" % [naufragio, balance.umbral_naufragio])
+	_check(alarma > charco and naufragio > alarma,
+		"y sube siempre: mas agua nunca puede dibujarse mas baja")
+
+	# --- mojado: aparece, y a la altura que dice la curva ---
+	for i in barco.probe_count():
+		barco.flood_probe(i, balance.umbral_alarma)
+	for _i in 20:
+		await get_tree().physics_frame
+
+	_check(piscina.visible, "con el barco a media agua, la piscina se ve")
+	var sobre_cubierta: float = piscina.position.y - 0.80
+	_check(absf(sobre_cubierta - alarma) < 0.05,
+		"y flota a la altura que promete la curva, medida sobre la cubierta",
+		"%.2f m sobre cubierta, la curva dice %.2f" % [sobre_cubierta, alarma])
+	_check(piscina.profundidad_maxima() > 0.30,
+		"y sabe decir cuanta agua hay para el freno al caminar y el chapoteo",
+		"%.2f m" % piscina.profundidad_maxima())
+
+	# --- el plano no asoma por los costados ---
+	# Y la lamina tiene que caber dentro del casco, INCLUIDA la proa en punta: con
+	# un rectangulo el agua asomaba flotando por fuera de la amura. Es un fallo
+	# que ningun numero delata y que se vio en una captura.
+	var caja_lamina := piscina.mesh.get_aabb() if piscina.mesh != null else AABB()
+	var casco := barco.get_node_or_null(^"HullShape") as CollisionShape3D
+	var caja := casco.shape as BoxShape3D if casco != null else null
+	if caja != null:
+		_check(caja_lamina.size.x < caja.size.x,
+			"la lamina no asoma por los costados",
+			"%.2f de manga contra %.2f" % [caja_lamina.size.x, caja.size.x])
+		var semi_en_proa: float = _semianchura_de(piscina.mesh, caja_lamina.position.z + 0.2)
+		_check(semi_en_proa < caja.size.x * 0.25,
+			"y en la proa se afina como el casco, en vez de acabar en rectangulo",
+			"%.2f m de semimanga en la amura" % semi_en_proa)
+
+	_liberar_ya(barco)
+
+
+## La mitad del ancho que tiene la lamina a esa z. Para comprobar que la proa se
+## afina de verdad.
+func _semianchura_de(malla: Mesh, z: float) -> float:
+	var ancho: float = 0.0
+	for i in malla.get_surface_count():
+		var arrays := malla.surface_get_arrays(i)
+		if arrays.size() <= Mesh.ARRAY_VERTEX:
+			continue
+		for v: Vector3 in PackedVector3Array(arrays[Mesh.ARRAY_VERTEX]):
+			if absf(v.z - z) < 0.35:
+				ancho = maxf(ancho, absf(v.x))
+	return ancho
+
+
+## EL agua hunde, no tumba (decision de diseño, 24-ago-2026).
+##
+## Se le mete toda el agua a UN COSTADO —el caso mas extremo que puede darse— y
+## el casco tiene que seguir adrizado. Antes esto lo tumbaba a proposito: cada
+## celda perdia su propio empuje y el barco se iba hacia el lado mojado. Se quito
+## porque estorbaba al feel y, sobre todo, porque era ilegible: la escora era el
+## UNICO aviso de donde estaba el agua.
+##
+## El test comprueba las dos mitades, porque una sola no significa nada:
+##  1. con el agua a un lado NO se inclina, y
+##  2. con esa misma agua SI se hunde mas (o sea que el agua sigue castigando —
+##     un barco que ni se inclina ni se hunde es un barco que ignora el agua).
+func _test_el_agua_no_inclina_el_barco() -> void:
+	await get_tree().physics_frame
+	Ocean.clear_events()
+	Ocean.set_fury_immediate(0.0)
+
+	var barco := _instanciar_barco()
+	barco.global_position = Vector3(0, 2, 0)
+	for _i in 300:
+		await get_tree().physics_frame
+
+	_check(is_zero_approx(barco.sesgo_escora),
+		"el sesgo de escora por agua viene apagado de fabrica",
+		"%.2f" % barco.sesgo_escora)
+
+	var calado_seco: float = barco.global_position.y
+	var escora_seca: float = _escora_grados(barco)
+
+	# Todo el peso a babor: las celdas con x < 0. Es el reparto mas injusto que
+	# el juego puede producir, asi que si aqui no se inclina, no se inclina nunca.
+	var mojadas: int = 0
+	for i in barco.probe_count():
+		if barco.probes[i].position.x < 0.0:
+			barco.flood_probe(i, 0.8)
+			mojadas += 1
+	_check(mojadas > 0, "hay celdas a babor que mojar", "%d" % mojadas)
+	for _i in 420:
+		await get_tree().physics_frame
+
+	var escora_mojada: float = _escora_grados(barco)
+	var calado_mojado: float = barco.global_position.y
+
+	_check(absf(escora_mojada - escora_seca) < 3.0,
+		"con toda el agua a un costado, el barco NO se tumba",
+		"%.1f° seco -> %.1f° mojado" % [escora_seca, escora_mojada])
+	_check(calado_mojado < calado_seco - 0.05,
+		"pero SI se hunde mas: el agua sigue castigando, solo que hacia abajo",
+		"%.2f m -> %.2f m" % [calado_seco, calado_mojado])
+
+	_liberar_ya(barco)
+
+
+## Cuanto esta escorado el casco, en grados: el angulo entre su vertical y la del
+## mundo. Sirve igual para escora y para cabeceo, que es lo que se quiere — la
+## pregunta es "¿esta derecho?", no "¿hacia donde se cae?".
+func _escora_grados(barco: Node3D) -> float:
+	return rad_to_deg(barco.global_basis.y.angle_to(Vector3.UP))
+
+
 func _test_naufragio_y_reflote() -> void:
 	await get_tree().physics_frame
 	Ocean.clear_events()

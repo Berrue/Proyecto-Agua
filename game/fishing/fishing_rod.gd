@@ -85,6 +85,54 @@ const BEND_CURVE_GAIN := 1.3
 ## da un arco de circunferencia, que lee como manguera, no como caña.
 const BEND_BONE_WEIGHTS := [0.06, 0.10, 0.15, 0.20, 0.24, 0.25]
 
+# --- El sedal enhebrado y el aparejo ----------------------------------------
+# La caña tenia carrete, anillas y puntera, pero el hilo solo existia DESPUES de
+# lanzar (de la punta a la boya): en la mano era un palo naranja. El sedal
+# enhebrado es lo que dice "esto pesca" en la pose que el jugador mira el 90 %
+# del tiempo, y ademas ata las tres piezas que ya se movian — la bobina que
+# gira, el cuerpo que se arquea y la punta — en un mismo objeto.
+
+## Por donde pasa el sedal, en el espacio del MODELO de la caña y en metros: la
+## salida de la bobina, el centro de las seis anillas y la puntera.
+##
+## Espeja `guide_specs` + el carrete de `tools/build_fishing_rod.py` (alli en
+## coordenadas de Blender: aqui `+Z` de Blender es `+Y` y `+Y` es `-Z`). No es
+## un numero duplicado a ciegas: `fishing_tests` comprueba que cada punto cae
+## DENTRO del aro real de la malla, asi que si alguien mueve una anilla en el
+## generador y no aqui, salta en rojo en vez de dibujar el hilo por fuera.
+const ENHEBRADO: Array[Vector3] = [
+	Vector3(0.0, 0.097, -0.0728), # labio de la bobina, por donde sale el hilo
+	Vector3(0.0, 0.330, -0.04069),
+	Vector3(0.0, 0.575, -0.03464),
+	Vector3(0.0, 0.810, -0.02951),
+	Vector3(0.0, 1.020, -0.024986),
+	Vector3(0.0, 1.200, -0.021514),
+	Vector3(0.0, 1.360, -0.018472),
+	Vector3(0.0, 1.536, -0.0117), # puntera: el ultimo aro, casi en el eje
+]
+
+## Cuanto sedal cuelga de la puntera con el aparejo en la mano. Treinta
+## centimetros es el descuelgue que deja un pescador entre la punta y el anzuelo
+## para lanzar: menos no se ve, y mas se pasea el anzuelo por delante de la cara.
+const APAREJO_LARGO := 0.30
+
+## Un punto CUALQUIERA del cuerpo de la caña, en el espacio del pivote (el
+## cuerpo va a lo largo del eje Y). Sirve para saber por que lado queda la caña
+## y plantar el anzuelo con la curva hacia el otro — ver `_orientar_aparejo`.
+const PUNTO_DEL_CUERPO := Vector3(0.0, 0.3, 0.0)
+
+## Donde flota el aparejo una vez echado el sedal: al COSTADO de la boya y a
+## ras de agua, no colgando debajo.
+##
+## Un flotador de verdad lleva el anzuelo un metro por debajo, o sea donde no lo
+## ve nadie — y aqui menos: la boya son 32 cm de bola que lo tapa desde arriba y
+## el agua tapa lo que asome por el lado (medido: no pintaba un pixel). Gana la
+## lectura: el jugador tiene que poder ver que en el mar esta EL MISMO aparejo
+## que llevaba en la caña, con el mismo cebo. La boya sigue siendo la señal de
+## la picada; el aparejo es la prueba de que no hay dos aparejos distintos.
+const APAREJO_JUNTO_A_BOYA := 0.34
+const APAREJO_SOBRE_EL_AGUA := 0.09
+
 ## Cuantas picadas de cebo caben en el anzuelo de una cebada. Seis y no una:
 ## con una carga por viaje al cubo, cebar seria una tarea; con seis es un
 ## ritmo — vuelves al cubo cada tantos peces, como a la bodega.
@@ -116,6 +164,11 @@ const TIER_PATHS: Array[String] = [
 ## No se toca el angulo de la caña (`view_angles_deg`): ese esta jugado en
 ## playtest y mueve la punta, el sedal y el encuadre entero.
 @export_range(-90.0, 90.0, 1.0) var model_roll_deg: float = 50.0
+## La partida empieza con la caña CLAVADA en un soporte del barco, no en la
+## mano: hay que ir a por ella (E). Lo enciende `player.tscn`, que es quien sabe
+## que hay un barco debajo; una caña instanciada suelta (tests, capturas) nace
+## en la mano, que es el caso sin sorpresas.
+@export var empezar_clavada: bool = false
 
 var state: State = State.IDLE
 var fight := FightModel.new()
@@ -204,6 +257,27 @@ var _esq_a_pivote := Transform3D.IDENTITY
 var _punta_esq := Vector3.ZERO
 var _rest_punta_inv := Transform3D.IDENTITY
 
+## El sedal enhebrado, en el MISMO espacio en el que se curva la caña (el del
+## esqueleto, o el del pivote si el modelo llegara sin rig), mas lo que hace
+## falta para pasarle por encima el doblez: la inversa de la pose en reposo de
+## cada hueso, la transformada de piel ya compuesta de este frame, y el reparto
+## de pesos (centros y luz entre huesos) que usa `tools/build_fishing_rod.py`.
+var _hilo_esq := PackedVector3Array()
+var _rest_inv: Array[Transform3D] = []
+var _piel_cache: Array[Transform3D] = []
+var _centros := PackedFloat32Array()
+var _luz_hueso: float = 1.0
+var _origen_esq := Vector3.ZERO
+var _eje_esq := Vector3.UP
+
+## El aparejo colgando de la puntera: posicion y velocidad en el espacio del
+## PIVOTE. Ahi el pendulo sale gratis y correcto — cuando la caña se dobla, se
+## inclina o la camara gira, es el OBJETIVO el que se mueve dentro de este
+## espacio, asi que el anzuelo se queda atras solo, sin simular nada en mundo.
+var _aparejo_pos := Vector3.ZERO
+var _aparejo_vel := Vector3.ZERO
+var _aparejo_colocado: bool = false
+
 var _reel_p: AudioStreamPlayer3D
 var _reel_pb: AudioStreamPlaybackPolyphonic
 var _buzz_p: AudioStreamPlayer3D
@@ -221,6 +295,18 @@ var _hud: FishingHud
 @onready var _bobber: MeshInstance3D = $Bobber
 @onready var _line: MeshInstance3D = $Line
 @onready var _line_mat := StandardMaterial3D.new()
+## El sedal que va POR la caña (bobina -> anillas -> puntera -> bajante). Cuelga
+## del pivote y no es `top_level` a proposito: dibujado en coordenadas de la
+## caña sigue cada doblez en el mismo frame, mientras que en coordenadas de
+## mundo se despegaria de las anillas cada vez que la camara gira rapido. El
+## nodo tiene que quedarse SIN transform (los vertices ya vienen en su sitio).
+@onready var _enhebrado: MeshInstance3D = $RodPivot/Enhebrado
+@onready var _aparejo: Node3D = $RodPivot/Aparejo
+## El MISMO anzuelo, colgado de la boya: echado el sedal, el aparejo esta ahi y
+## no en tu mano. Cuelga de `Bobber` para heredarle la visibilidad — aparece al
+## lanzar, se va al recoger y se queda a la deriva con ella tras una rotura, sin
+## una sola linea que lo cablee.
+@onready var _aparejo_agua: Node3D = $Bobber/Aparejo
 
 
 ## Objetivo de inclinacion lateral (radianes) del tira-y-afloja. Positivo =
@@ -273,15 +359,26 @@ func _ready() -> void:
 	_rng_fx.randomize()
 	_bobber.visible = false
 	_bobber.top_level = true
+	_aparejo_agua.top_level = true
 	_line.top_level = true
 	_line.mesh = ImmediateMesh.new()
 	_line_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_line_mat.albedo_color = Color(0.9, 0.9, 0.85)
 	_line.material_override = _line_mat
+	# El sedal es UNO: el enhebrado comparte material con el tramo de fuera para
+	# que el ambar->rojo de la tension corra por la caña entera (regla 8 — si el
+	# hilo de dentro se quedara blanco, el aviso tendria dos versiones).
+	_enhebrado.transform = Transform3D.IDENTITY
+	_enhebrado.mesh = ImmediateMesh.new()
+	_enhebrado.material_override = _line_mat
+	cebo_cambiado.connect(_pintar_cebo)
+	_pintar_cebo()
 	_setup_audio()
 	_setup_mark()
 	_hud = FishingHud.new()
 	add_child(_hud)
+	if empezar_clavada:
+		_clavar_al_arrancar.call_deferred()
 
 
 func _setup_audio() -> void:
@@ -892,23 +989,19 @@ func _rod_input_ready() -> bool:
 #  El soporte de borda: la caña clavada pesca sola
 # =============================================================================
 
-## La caña se guarda del viewmodel en dos casos: clavada en el soporte, o con
-## las manos cargadas por el porteo (deuda declarada de PORTEO.md, saldada
-## aqui). Durante la LUCHA las manos estan "llenas" pero de la propia caña
-## (input_captured): ahi se ve, faltaria mas.
-func _guardada() -> bool:
-	if soporte != null:
-		return true
+## Las manos ocupadas por el PORTEO: ahi la caña se guarda de la vista (deuda
+## declarada de PORTEO.md, saldada aqui). Durante la LUCHA las manos estan
+## "llenas" pero de la propia caña (input_captured): ahi se ve, faltaria mas.
+func _manos_ocupadas() -> bool:
 	return _player != null and _player.hands_used > 0 and not _player.input_captured
 
 
-## De donde sale el sedal: de la punta en tu mano, o de la punta de la caña
-## clavada en la borda.
+## De donde sale el sedal: de la punta de la caña, este donde este.
+##
+## Antes habia que preguntarle al soporte por SU punta, porque el soporte tenia
+## su propia caña de primitivas. Ya no: la caña clavada es ESTA caña, movida al
+## barco, asi que hay una sola punta y no puede haber dos que no coincidan.
 func _tip_pos() -> Vector3:
-	if soporte != null and soporte.has_method(&"punta"):
-		var punta := soporte.call(&"punta") as Node3D
-		if punta != null:
-			return punta.global_position
 	return _tip.global_position
 
 
@@ -919,6 +1012,11 @@ func esta_clavada() -> bool:
 ## Clavar la caña en un soporte de borda: libera las manos sin dejar de
 ## pescar. Solo en reposo o con el sedal echado — a mitad de un gesto (carga,
 ## picada, lucha) la caña es tuya o de nadie.
+##
+## La caña no se "esconde y se sustituye": el pivote entero SE MUDA al soporte,
+## con su modelo, su sedal enhebrado, su aparejo y sus altavoces del carrete. Es
+## la misma caña vista desde fuera — antes eran dos (el viewmodel escondido y un
+## palo gris en la borda), y dos siempre acaban contando cosas distintas.
 func clavar_en(nuevo_soporte: Node3D) -> bool:
 	if soporte != null or nuevo_soporte == null:
 		return false
@@ -927,6 +1025,15 @@ func clavar_en(nuevo_soporte: Node3D) -> bool:
 	soporte = nuevo_soporte
 	if soporte.has_method(&"ocupar"):
 		soporte.call(&"ocupar")
+	# La caña se muda a un nodo que NO es nuestro y puede morir antes que
+	# nosotros (el barco entero, sin ir mas lejos). Enterarse a tiempo es la
+	# diferencia entre recuperarla y quedarse con un puntero muerto al que le
+	# escribes `visible` sesenta veces por segundo.
+	soporte.tree_exiting.connect(_soporte_se_va, CONNECT_ONE_SHOT)
+	var cuna: Node3D = soporte
+	if soporte.has_method(&"cuna"):
+		cuna = soporte.call(&"cuna") as Node3D
+	_mudar_pivote(cuna)
 	_stop_rumble()
 	return true
 
@@ -939,7 +1046,61 @@ func retomar() -> void:
 		return
 	if soporte.has_method(&"liberar"):
 		soporte.call(&"liberar")
+	if soporte.tree_exiting.is_connected(_soporte_se_va):
+		soporte.tree_exiting.disconnect(_soporte_se_va)
 	soporte = null
+	_mudar_pivote(self)
+
+
+## El soporte (o el barco entero) se va del arbol con nuestra caña dentro. Pasa
+## en los arneses que montan y desmontan barcos, y pasaria en cualquier
+## desmontaje parcial del mundo. `tree_exiting` llega ANTES de que se lo lleven,
+## asi que da tiempo a recuperarla: la caña vuelve a la mano.
+func _soporte_se_va() -> void:
+	if soporte == null:
+		return
+	soporte = null
+	_mudar_pivote(self)
+
+
+## Muda el pivote de la caña a otro padre conservando SU pose local (no la
+## global): en la mano cuelga del viewmodel, clavada cuelga de la cuna del
+## soporte, y en los dos sitios la pose que vale es la que escriben el doblez y
+## el muelle cada frame. El brazo de primera persona se queda quieto donde
+## esta —cuelga del pivote— y por eso se apaga en cuanto la caña no es tuya.
+func _mudar_pivote(destino: Node) -> void:
+	if _rod_pivot == null or not is_instance_valid(_rod_pivot):
+		return
+	var padre := _rod_pivot.get_parent()
+	if padre == destino:
+		return
+	# A mano y no con `reparent`: esto tiene que funcionar tambien cuando la
+	# caña se esta yendo del arbol (ver `_exit_tree`), y ahi `reparent` no vale.
+	if padre != null:
+		padre.remove_child(_rod_pivot)
+	destino.add_child(_rod_pivot)
+	_rod_pivot.position = Vector3.ZERO
+	_rod_pivot.rotation = Vector3.ZERO
+	_aparejo_colocado = false
+
+
+## Busca un soporte libre en el barco y se clava en el.
+##
+## Es lo que hace que la partida empiece con la caña EN EL BARCO y no en la mano
+## (decision del 24-ago-2026): la caña es un aparejo del pesquero, no una
+## extremidad. Se difiere un frame porque el mundo todavia se esta montando
+## cuando la caña despierta.
+func _clavar_al_arrancar() -> void:
+	if soporte != null or not is_inside_tree():
+		return
+	var raiz := get_tree().current_scene
+	if raiz == null:
+		return
+	for s: Node in raiz.find_children("*", "SoporteCania", true, false):
+		if s.has_method(&"libre") and not s.call(&"libre"):
+			continue
+		if clavar_en(s as Node3D):
+			return
 
 
 # =============================================================================
@@ -1039,6 +1200,12 @@ func _apply_tier() -> void:
 ## Todo esto es fijo (la caña rueda dentro del pivote una sola vez y el
 ## esqueleto cuelga del modelo), asi que se calcula aqui y no cada frame.
 func _setup_doblez(modelo: Node3D) -> void:
+	# El sedal enhebrado se cachea SIEMPRE, con rig o sin el: una caña tiesa
+	# tambien tiene hilo. Sin esqueleto los puntos se quedan en el espacio del
+	# pivote y `_piel()` los devuelve tal cual (`_esq_a_pivote` es la identidad).
+	for punto in ENHEBRADO:
+		_hilo_esq.append(modelo.transform * punto)
+
 	var encontrados := modelo.find_children("*", "Skeleton3D", true, false)
 	if encontrados.is_empty():
 		return
@@ -1065,6 +1232,56 @@ func _setup_doblez(modelo: Node3D) -> void:
 	_punta_esq = a_esqueleto * Vector3(0.0, _tip.position.y, 0.0)
 	_rest_punta_inv = _skel.get_bone_global_rest(_huesos[_huesos.size() - 1]).affine_inverse()
 
+	# Y el reparto de pesos, para poder curvar CUALQUIER punto de la caña (las
+	# anillas por las que pasa el sedal) y no solo la punta. Los huesos son una
+	# cadena de tramos iguales, asi que el centro de cada uno cae a media luz de
+	# su cabeza: la misma cuenta que hace el generador al pesar los vertices.
+	for i in _huesos.size():
+		_rest_inv.append(_skel.get_bone_global_rest(_huesos[i]).affine_inverse())
+		_piel_cache.append(Transform3D.IDENTITY)
+	_origen_esq = _skel.get_bone_global_rest(_huesos[0]).origin
+	var segundo := _skel.get_bone_global_rest(_huesos[1]).origin - _origen_esq
+	_luz_hueso = maxf(segundo.length(), 1e-5)
+	_eje_esq = segundo / _luz_hueso
+	for i in _huesos.size():
+		_centros.append((float(i) + 0.5) * _luz_hueso)
+	for i in _hilo_esq.size():
+		_hilo_esq[i] = a_esqueleto * _hilo_esq[i]
+
+
+## Donde acaba un punto de la caña cuando el cuerpo se arquea.
+##
+## No es una aproximacion: es el MISMO skinning que hace la GPU — mezcla lineal
+## con los pesos de sombrero que reparte `tools/build_fishing_rod.py`, cada
+## vertice entre los dos huesos mas cercanos. Por eso el sedal enhebrado no se
+## despega de las anillas ni con el doblez al maximo, y por eso sigue cuadrando
+## si mañana cambian los pesos o el numero de huesos: la formula vive en un solo
+## sitio conceptual (el generador) y aqui se replica entera, no a ojo.
+func _piel(p_esq: Vector3) -> Vector3:
+	if _skel == null or _piel_cache.is_empty():
+		return p_esq
+	var t: float = (p_esq - _origen_esq).dot(_eje_esq)
+	# Por debajo del primer hueso empieza el hierro: mango, portacarretes y
+	# carrete se quedaron FUERA del rig a proposito (una pieza rigida que se
+	# estira delata el truco antes que nada), asi que la salida de la bobina no
+	# se curva — se queda donde el carrete la deja.
+	if t < 0.0:
+		return p_esq
+	var suma := Vector3.ZERO
+	var total: float = 0.0
+	for i in _piel_cache.size():
+		var peso: float = maxf(0.0, 1.0 - absf(t - _centros[i]) / _luz_hueso)
+		if peso <= 0.0:
+			continue
+		total += peso
+		suma += peso * (_piel_cache[i] * p_esq)
+	if total <= 1e-6:
+		# Por debajo del primer hueso o por encima del ultimo: pegado al
+		# extremo, sin repartir (otra vez, igual que el generador).
+		var i: int = 0 if t < _centros[0] else _piel_cache.size() - 1
+		return _piel_cache[i] * p_esq
+	return suma / total
+
 
 ## Reparte el doblez entre la muñeca (girar la caña entera) y el cuerpo
 ## (curvarse), y deja el nodo `Tip` donde el sedal tiene que nacer.
@@ -1085,6 +1302,10 @@ func _aplicar_doblez(bend: float) -> void:
 	# caña. Se escribe en local (el pivote ya gira por su cuenta).
 	var piel := _skel.get_bone_global_pose(_huesos[_huesos.size() - 1]) * _rest_punta_inv
 	_tip.position = _esq_a_pivote * (piel * _punta_esq)
+	# Y la piel de TODOS los huesos, compuesta una sola vez por frame: el sedal
+	# pasa por ocho puntos, y recomponerla en cada uno seria pagarla ocho veces.
+	for i in _piel_cache.size():
+		_piel_cache[i] = _skel.get_bone_global_pose(_huesos[i]) * _rest_inv[i]
 
 
 ## El carrete gira mientras recoges, y solo mientras recoges.
@@ -1108,6 +1329,23 @@ func _spin_reel(delta: float) -> void:
 
 func _exit_tree() -> void:
 	_stop_rumble()
+	# Si la caña se va del mundo estando clavada —un tripulante que se
+	# desconecta, sin ir mas lejos— hay que barrer detras: el soporte se queda
+	# ocupado por un fantasma que nadie puede liberar, y el pivote (modelo,
+	# sedal, aparejo y altavoces del carrete) sigue vivo colgado del barco. Es
+	# el mismo cuidado que la bomba tiene con quien se va de la estacion.
+	#
+	# Se corta y se libera en vez de re-adoptarlo: aqui el arbol se esta
+	# desmontando y no es sitio para andar añadiendo hijos.
+	if soporte != null and is_instance_valid(soporte) and soporte.has_method(&"liberar"):
+		soporte.call(&"liberar")
+	if _rod_pivot != null and is_instance_valid(_rod_pivot):
+		var padre := _rod_pivot.get_parent()
+		if padre != null and padre != self:
+			padre.remove_child(_rod_pivot)
+			_rod_pivot.queue_free()
+			_rod_pivot = null
+			set_physics_process(false)
 
 
 # =============================================================================
@@ -1115,16 +1353,21 @@ func _exit_tree() -> void:
 # =============================================================================
 
 func _update_visuals(delta: float) -> void:
+	if _rod_pivot == null or not is_instance_valid(_rod_pivot):
+		return
 	_prev_bobber_y = _bobber.global_position.y
 
 	# La caña se guarda sola del viewmodel (clavada o porteando); la boya, el
 	# sedal y el "!" son top_level y siguen viviendo en el mundo. El brazo
 	# cuelga del pivote, asi que se guarda con ella.
-	_rod_pivot.visible = not _guardada()
-	# Clavada, el soporte es su cuerpo: le presta el muelle real del doblez —
-	# la señal de estacion sale de la MISMA fisica que doblaria tus manos.
-	if soporte != null and soporte.has_method(&"set_doblado"):
-		soporte.call(&"set_doblado", _bend)
+	# Clavada, la caña vive en el barco y se ve desde cubierta; en la mano, se
+	# guarda si el porteo te ocupa las manos. El brazo de primera persona solo
+	# existe cuando la caña es TUYA: clavada, el que se dobla es el aparejo del
+	# barco, y un brazo saliendo del soporte seria un fantasma.
+	var en_mano: bool = soporte == null
+	_rod_pivot.visible = not (en_mano and _manos_ocupadas())
+	if _player != null:
+		_player.mostrar_brazo(en_mano)
 
 	# Hitstop LOCAL: la presentacion se congela (la camara y el raton JAMAS).
 	if _freeze_left > 0.0:
@@ -1212,13 +1455,199 @@ func _update_visuals(delta: float) -> void:
 			var speed: float = 14.0 if state == State.BITE else 8.0
 			_bobber.global_position = _bobber.global_position.lerp(pos, clampf(speed * delta, 0, 1))
 
+	_colocar_aparejo_agua()
+
 	if _mark.visible:
 		_mark.global_position = _bobber.global_position + Vector3.UP * 1.1
 
+	_mover_aparejo(delta)
 	_draw_line()
 
 
+## Donde muere el sedal EN la caña: el ultimo aro (la puntera), ya arqueado.
+##
+## No es `Tip`: la puntera esta un centimetro fuera del eje y es por donde sale
+## el hilo de verdad. `Tip` sigue siendo el ancla del tramo que va al mundo —
+## ese esta jugado en playtest y no se toca.
+func _punta_hilo() -> Vector3:
+	if _hilo_esq.is_empty():
+		return _tip.position
+	return _esq_a_pivote * _piel(_hilo_esq[_hilo_esq.size() - 1])
+
+
+## El aparejo en la mano: un pendulo colgado de la puntera.
+##
+## Es lo que convierte la caña de atrezo en herramienta. Al andar, al girar la
+## camara y al cargar el lanzamiento, el anzuelo se queda atras y vuelve solo:
+## el objetivo (la vertical de la punta, 30 cm por debajo) se mueve DENTRO del
+## espacio del pivote y el muelle lo persigue. La constante es `g / largo`, o
+## sea el periodo real de un pendulo de esta longitud — no un numero a ojo.
+##
+## Tras una rotura no hay aparejo que colgar durante los 6 s del trozo de sedal:
+## perder el pez se lleva TAMBIEN el anzuelo, y volver a verlo es la señal de
+## que has vuelto a montar.
+func _mover_aparejo(delta: float) -> void:
+	var en_mano: bool = (state == State.IDLE or state == State.CASTING) \
+		and _remnant_left <= 0.0
+	_aparejo.visible = en_mano
+	if not en_mano:
+		_aparejo_colocado = false
+		return
+
+	var punta := _punta_hilo()
+	var abajo: Vector3 = (_rod_pivot.global_transform.basis.inverse() * Vector3.DOWN).normalized()
+	var objetivo: Vector3 = punta + abajo * APAREJO_LARGO
+	if not _aparejo_colocado:
+		# Al retomar la caña (o en el primer frame) el anzuelo aparece donde
+		# cuelga, no volando desde el origen del pivote.
+		_aparejo_colocado = true
+		_aparejo_pos = objetivo
+		_aparejo_vel = Vector3.ZERO
+	_aparejo_vel += ((objetivo - _aparejo_pos) * (9.8 / APAREJO_LARGO)
+		- _aparejo_vel * 2.4) * delta
+	_aparejo_pos += _aparejo_vel * delta
+
+	# El sedal no se estira: el anzuelo vive en la esfera de radio APAREJO_LARGO
+	# y el tiron del hilo se come la velocidad que se sale de ella.
+	var brazo: Vector3 = _aparejo_pos - punta
+	var largo: float = brazo.length()
+	if largo > APAREJO_LARGO and largo > 1e-5:
+		var radial: Vector3 = brazo / largo
+		_aparejo_pos = punta + radial * APAREJO_LARGO
+		_aparejo_vel -= radial * maxf(_aparejo_vel.dot(radial), 0.0)
+	_aparejo.position = _aparejo_pos
+	_orientar_aparejo(punta)
+
+
+## Como se planta el anzuelo: el ojo mirando al hilo (de ahi cuelga) y el PLANO
+## de la curva de cara a quien mira.
+##
+## Lo segundo no es capricho, es lo que hace que exista: colgando en la vertical
+## de la puntera, el anzuelo cae casi en la linea de vision de la primera
+## persona, y de canto son dos pixeles de alambre pegados al sedal — medido en
+## `capture_fishing`, no se veia NADA. De perfil se lee entero. Es el mismo
+## criterio que rodo el modelo de la caña 50 grados para que el carrete asomara
+## por el brazo (`model_roll_deg`): una pieza que el jugador no puede ver es una
+## pieza que no esta. Y no hay fisica que traicionar — un anzuelo colgado de un
+## hilo gira libre sobre si mismo, asi que mirar al pescador es tan valido como
+## cualquier otra cosa.
+func _orientar_aparejo(punta: Vector3) -> void:
+	var eje_y: Vector3 = punta - _aparejo_pos
+	if eje_y.length_squared() < 1e-8:
+		return
+	eje_y = eje_y.normalized()
+	# La malla tiene la curva en su plano YZ, o sea que ensenia el perfil cuando
+	# su eje X apunta a la camara.
+	var eje_x := Vector3.RIGHT
+	var vista := get_viewport() if is_inside_tree() else null
+	var cam := vista.get_camera_3d() if vista != null else null
+	if cam != null:
+		var mirada: Vector3 = _rod_pivot.to_local(cam.global_position) - _aparejo_pos
+		eje_x = mirada - eje_y * mirada.dot(eje_y)
+	if eje_x.length_squared() < 1e-8:
+		eje_x = eje_y.cross(Vector3.FORWARD)
+		if eje_x.length_squared() < 1e-8:
+			eje_x = Vector3.RIGHT
+	eje_x = eje_x.normalized()
+	var eje_z: Vector3 = eje_x.cross(eje_y)
+	# Y de las dos caras posibles se elige la que deja la CURVA por fuera. El
+	# aparejo cuelga en la vertical de la puntera, o sea justo encima de la
+	# silueta de la caña en primera persona: con la curva hacia dentro, el unico
+	# trozo que hace reconocible un anzuelo se lo come el cuerpo (medido en
+	# `capture_fishing`: de 24 pixeles de alto sobrevivian 6).
+	if (PUNTO_DEL_CUERPO - _aparejo_pos).dot(eje_z) < 0.0:
+		eje_x = -eje_x
+		eje_z = -eje_z
+	_aparejo.transform.basis = Basis(eje_x, eje_y, eje_z)
+
+
+## El aparejo en el agua: al costado de la boya y por el lado que mira quien
+## pesca, para que se vea.
+##
+## Es `top_level` y se coloca a mano en vez de colgar del nodo de la boya porque
+## el lado bueno cambia con la camara: pegado debajo, la propia bola lo esconde
+## desde cubierta. La visibilidad la SIGUE heredando de la boya (top_level
+## desengancha la transformada, no el arbol), asi que aparece al lanzar, se va al
+## recoger y se queda a la deriva con ella tras una rotura, sin cablear nada.
+func _colocar_aparejo_agua() -> void:
+	if not _bobber.visible:
+		return
+	var centro := _bobber.global_position
+	var hacia := Vector3.FORWARD
+	var vista := get_viewport() if is_inside_tree() else null
+	var cam := vista.get_camera_3d() if vista != null else null
+	if cam != null:
+		hacia = cam.global_position - centro
+		hacia.y = 0.0
+	if hacia.length_squared() < 1e-8:
+		hacia = Vector3.FORWARD
+	hacia = hacia.normalized()
+	# Se aparta DE LADO, no hacia la camara: separarlo en profundidad no separa
+	# nada en pantalla (la bola se le pone delante igual), y de lado sale limpio
+	# contra el agua con el sedal uniendolos.
+	var lado := hacia.cross(Vector3.UP).normalized()
+	_aparejo_agua.global_position = (centro + lado * APAREJO_JUNTO_A_BOYA
+		+ Vector3.UP * APAREJO_SOBRE_EL_AGUA)
+	# Cuelga a plomo (el ojo arriba) y de perfil, por lo mismo que el de la mano:
+	# de canto es un alambre de dos pixeles.
+	_aparejo_agua.global_transform.basis = Basis(hacia, Vector3.UP,
+		hacia.cross(Vector3.UP))
+
+
+## El sedal que va POR la caña, con el doblez de este frame encima.
+##
+## Se redibuja entero cada vez (son nueve vertices: rebuscar cuando cambia sale
+## mas caro que rehacerlo), pero SOLO cuando la caña se ve — guardada, ni se
+## toca la malla.
+func _dibujar_enhebrado() -> void:
+	var im := _enhebrado.mesh as ImmediateMesh
+	if im == null:
+		return
+	im.clear_surfaces()
+	if _hilo_esq.is_empty() or not _rod_pivot.visible:
+		return
+	im.surface_begin(Mesh.PRIMITIVE_LINE_STRIP)
+	for p in _hilo_esq:
+		im.surface_add_vertex(_esq_a_pivote * _piel(p))
+	# El ultimo tramo depende de donde este el aparejo: baja hasta el anzuelo si
+	# lo llevas en la mano, y si no pasa por `Tip`, que es donde nace el tramo
+	# de fuera — asi los dos sedales empalman sin un salto en la puntera.
+	im.surface_add_vertex(_aparejo.position if _aparejo.visible else _tip.position)
+	im.surface_end()
+
+
+## El cebo se ve DONDE ESTA: clavado en el anzuelo, en la mano Y en el agua.
+## Hasta ahora solo lo sabia el HUD de debug, o sea que en una partida de verdad
+## no lo sabia nadie; la bola ya venia en el GLB del aparejo, asi que enseñarla
+## es encenderla y tintarla.
+##
+## Los DOS aparejos se pintan con la misma llamada: son el mismo anzuelo visto
+## en dos sitios (la mano y el agua), y que uno llevara cebo y el otro no seria
+## el feedback mintiendo en el unico canal donde el cebo existe.
+func _pintar_cebo() -> void:
+	var puesto := cebo_puesto()
+	for aparejo: Node3D in [_aparejo, _aparejo_agua]:
+		var bola := aparejo.find_child("Cebo", true, false) as MeshInstance3D
+		if bola == null:
+			continue
+		bola.visible = puesto != null
+		if puesto == null:
+			continue
+		# Un GLB trae su material en la malla, no como override (misma trampa
+		# que el tintado del tier): sin este respaldo el color se apagaria en
+		# silencio.
+		var base: Material = bola.get_surface_override_material(0)
+		if base == null and bola.mesh != null:
+			base = bola.mesh.surface_get_material(0)
+		var mat := base as StandardMaterial3D
+		if mat != null:
+			mat = mat.duplicate()
+			mat.albedo_color = puesto.color
+			bola.set_surface_override_material(0, mat)
+
+
 func _draw_line() -> void:
+	_dibujar_enhebrado()
 	var im := _line.mesh as ImmediateMesh
 	im.clear_surfaces()
 
@@ -1250,6 +1679,11 @@ func _draw_line() -> void:
 		var t := float(i) / 8.0
 		var p := a.lerp(mid, t).lerp(mid.lerp(b, t), t)
 		im.surface_add_vertex(_line.to_local(p))
+	# El sedal no acaba en la boya: la ATRAVIESA y sigue hasta el anzuelo, que es
+	# lo que pesca. La boya es solo el flotador por el que pasa (y por eso este
+	# tramo se dibuja aunque quede bajo el agua: cuando el mar abre un valle, ahi
+	# esta el aparejo esperando).
+	im.surface_add_vertex(_line.to_local(_aparejo_agua.global_position))
 	im.surface_end()
 
 

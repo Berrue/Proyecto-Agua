@@ -270,6 +270,11 @@ contiene el cabezal — `posicion_toma_global()` → `FloatingBody3D.probe_index
   a las entradas de agua. Entrada y salida son los dos lados de la misma balanza
   y el punto de equilibrio ES el dial de dificultad: separarlos en dos recursos
   permitiría afinar uno sin ver el otro.
+- ⚠️ **«Elegir qué celda achicar» ya NO es la decisión** (24-ago-2026). El agua
+  dejó de inclinar el barco y las celdas dejaron de ser visibles para el jugador:
+  ahora hay UN nivel de agua y el barco se hunde recto. Lo que decide el
+  achicador es el ritmo —llenar, cambiar el selector, sacar la manguera por la
+  borda— y mantener el colador dentro del agua. Ver `docs/DECISIONES.md`.
 - **Autoridad**: el caudal y las celdas son del host (`_physics_process` sale de
   inmediato en un cliente). El arbitraje vive en `BombaModel`, puro y testeable.
 - **En red (24-ago-2026): la estación ya viaja.** Los seis verbos —ocupar,

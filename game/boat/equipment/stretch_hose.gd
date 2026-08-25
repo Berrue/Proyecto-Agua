@@ -25,6 +25,11 @@ const LADOS_CUERDA: int = 4
 const EPSILON: float = 0.00001
 const UMBRAL_TENSION_SIGNAL: float = 0.02
 
+## Cuanto se tiene que mover un punto para merecer un redibujado, al cuadrado.
+## 0,25 mm: por debajo no se ve, y una cuerda en reposo nunca se queda del todo
+## quieta por el ultimo bit del Verlet.
+const UMBRAL_REDIBUJO_SQ: float = 0.00000625
+
 @export_group("Nodos")
 ## Punto fijo donde la manguera sale de la bomba.
 @export var anchor_path: NodePath = ^"Anchor"
@@ -53,7 +58,11 @@ const UMBRAL_TENSION_SIGNAL: float = 0.02
 ## una sucesión de aros: además de reforzar la lectura medieval, evita que el
 ## tramo dinámico parezca una manguera de goma contemporánea.
 @export var material_refuerzo: Material
-@export_range(0.06, 0.40, 0.01) var separacion_refuerzo: float = 0.15
+## Cada cuantos metros va un anillo de cañamo. OJO, es el numero que MAS pesa de
+## toda la manguera: cada anillo es un toro completo (8 x 4 secciones = 192
+## vertices), asi que a 0,15 m eran ~40 anillos y 7.680 vertices por redibujado —
+## el 87 % del coste de dibujar. A 0,30 m se ven igual de bien y cuestan la mitad.
+@export_range(0.06, 0.40, 0.01) var separacion_refuerzo: float = 0.30
 @export_range(0.001, 0.012, 0.001) var radio_refuerzo: float = 0.004
 
 @export_group("Simulacion")
@@ -71,6 +80,24 @@ var _hose_mesh_instance: MeshInstance3D
 var _pickup_area: Area3D
 var _pickup_visual: Node3D
 var _immediate_mesh: ImmediateMesh
+## La forma con la que se dibujo por ultima vez, para saber si hace falta rehacer
+## la malla. Vale su memoria: 24 vectores contra reconstruir mil vertices.
+var _puntos_dibujados: PackedVector3Array = PackedVector3Array()
+
+## Senos y cosenos de los angulos del tubo y de la cuerda. Son CONSTANTES —
+## TAU * i / LADOS— y se estaban recalculando una vez por vertice: unas 53.000
+## llamadas trigonometricas por reconstruccion. Se calculan al arrancar.
+var _cos_tubo: PackedFloat32Array = PackedFloat32Array()
+var _sin_tubo: PackedFloat32Array = PackedFloat32Array()
+var _cos_cuerda: PackedFloat32Array = PackedFloat32Array()
+var _sin_cuerda: PackedFloat32Array = PackedFloat32Array()
+## Los ejes de cada anillo y sus normales, reutilizados entre reconstrucciones en
+## vez de pedir memoria nueva cada vez.
+var _laterales: PackedVector3Array = PackedVector3Array()
+var _verticales: PackedVector3Array = PackedVector3Array()
+var _normales_anillo: PackedVector3Array = PackedVector3Array()
+var _radiales_toro: PackedVector3Array = PackedVector3Array()
+var _forma_sucia: bool = true
 
 var _agarre: Node3D
 var _puntos := PackedVector3Array()
@@ -111,6 +138,36 @@ func _ready() -> void:
 
 func _physics_process(delta: float) -> void:
 	_simular_paso(delta)
+
+
+## El dibujado va aqui y no en la fisica: se redibuja como mucho una vez por
+## fotograma, y solo cuando la cuerda se ha movido de verdad. Con la manguera
+## recogida y quieta esto no hace absolutamente nada, que es lo correcto — antes
+## reconstruia la malla entera 120 veces por segundo aunque nadie la tocara.
+func _process(_delta: float) -> void:
+	if not _forma_sucia:
+		return
+	_forma_sucia = false
+	_actualizar_presentacion()
+
+
+## ¿Se ha movido la cuerda lo bastante como para valer un redibujado?
+##
+## El umbral es de un cuarto de milimetro: por debajo de eso el movimiento no se
+## ve ni de cerca, y una cuerda en reposo tiembla eternamente por el ultimo bit
+## del Verlet. Sin este corte, "solo si se movio" no ahorraria nada.
+func _marcar_forma_si_cambio() -> void:
+	if _forma_sucia:
+		return
+	if _puntos_dibujados.size() != _puntos.size():
+		_forma_sucia = true
+		_puntos_dibujados = _puntos.duplicate()
+		return
+	for i in _puntos.size():
+		if _puntos[i].distance_squared_to(_puntos_dibujados[i]) > UMBRAL_REDIBUJO_SQ:
+			_forma_sucia = true
+			_puntos_dibujados = _puntos.duplicate()
+			return
 
 
 # =============================================================================
@@ -250,7 +307,12 @@ func _simular_paso(delta: float) -> void:
 	for _iteracion: int in iteraciones_restriccion:
 		_resolver_restricciones(ancla_local, objetivo_fijo, fijar_extremo)
 
-	_actualizar_presentacion()
+	# AQUI NO SE DIBUJA. Resolver la cuerda es gratis (medido: 0,0 ms); lo que
+	# cuesta es reconstruir su malla vertice a vertice desde GDScript, y hacerlo
+	# a 120 Hz se comia MEDIO SEGUNDO DE CPU POR SEGUNDO DE JUEGO — el juego caia
+	# a 7 fps en cuanto alguien agarraba el colador. La forma de una manguera es
+	# presentacion: se redibuja una vez por FRAME, y solo si de verdad se movio.
+	_marcar_forma_si_cambio()
 
 
 ## Calcula el objetivo alcanzable y paga manguera al tirar. La posicion pedida
@@ -484,16 +546,37 @@ func _actualizar_presentacion() -> void:
 	_actualizar_cabezal()
 
 
+## Las tablas de angulos, una vez en la vida del nodo.
+func _asegurar_tablas() -> void:
+	if not _cos_tubo.is_empty():
+		return
+	_cos_tubo.resize(LADOS_TUBO)
+	_sin_tubo.resize(LADOS_TUBO)
+	for i in LADOS_TUBO:
+		var a: float = TAU * float(i) / float(LADOS_TUBO)
+		_cos_tubo[i] = cos(a)
+		_sin_tubo[i] = sin(a)
+	_cos_cuerda.resize(LADOS_CUERDA)
+	_sin_cuerda.resize(LADOS_CUERDA)
+	for i in LADOS_CUERDA:
+		var a: float = TAU * float(i) / float(LADOS_CUERDA)
+		_cos_cuerda[i] = cos(a)
+		_sin_cuerda[i] = sin(a)
+	_laterales.resize(CANTIDAD_PUNTOS)
+	_verticales.resize(CANTIDAD_PUNTOS)
+	_normales_anillo.resize(CANTIDAD_PUNTOS * LADOS_TUBO)
+	_radiales_toro.resize(LADOS_TUBO)
+
+
 func _actualizar_tuberia() -> void:
 	if _immediate_mesh == null or _puntos.size() != CANTIDAD_PUNTOS:
 		return
 	_immediate_mesh.clear_surfaces()
 	_immediate_mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLES, material_manguera)
 
-	var laterales := PackedVector3Array()
-	var verticales := PackedVector3Array()
-	laterales.resize(CANTIDAD_PUNTOS)
-	verticales.resize(CANTIDAD_PUNTOS)
+	_asegurar_tablas()
+	var laterales := _laterales
+	var verticales := _verticales
 	var lateral_previo := Vector3.ZERO
 	for indice: int in CANTIDAD_PUNTOS:
 		var tangente: Vector3 = _tangente_en(indice)
@@ -516,17 +599,29 @@ func _actualizar_tuberia() -> void:
 		verticales[indice] = vertical
 		lateral_previo = lateral
 
+	# La normal de cada (anillo, lado) se calculaba CUATRO veces —una por cada
+	# quad que la toca—, o sea 736 llamadas con su coseno, su seno y su raiz para
+	# 192 normales distintas. Se calculan una vez y se leen por indice: mismo
+	# resultado exacto, cuatro veces menos trabajo.
+	for anillo: int in CANTIDAD_PUNTOS:
+		var lat: Vector3 = laterales[anillo]
+		var ver: Vector3 = verticales[anillo]
+		var base: int = anillo * LADOS_TUBO
+		for lado: int in LADOS_TUBO:
+			_normales_anillo[base + lado] = (
+				lat * _cos_tubo[lado] + ver * _sin_tubo[lado]).normalized()
+
 	for anillo: int in range(CANTIDAD_PUNTOS - 1):
 		var u0: float = float(anillo) / float(CANTIDAD_PUNTOS - 1)
 		var u1: float = float(anillo + 1) / float(CANTIDAD_PUNTOS - 1)
+		var base0: int = anillo * LADOS_TUBO
+		var base1: int = base0 + LADOS_TUBO
 		for lado: int in LADOS_TUBO:
 			var siguiente_lado: int = (lado + 1) % LADOS_TUBO
-			var angulo0: float = TAU * float(lado) / float(LADOS_TUBO)
-			var angulo1: float = TAU * float(siguiente_lado) / float(LADOS_TUBO)
-			var normal00: Vector3 = _normal_anillo(laterales[anillo], verticales[anillo], angulo0)
-			var normal01: Vector3 = _normal_anillo(laterales[anillo], verticales[anillo], angulo1)
-			var normal10: Vector3 = _normal_anillo(laterales[anillo + 1], verticales[anillo + 1], angulo0)
-			var normal11: Vector3 = _normal_anillo(laterales[anillo + 1], verticales[anillo + 1], angulo1)
+			var normal00: Vector3 = _normales_anillo[base0 + lado]
+			var normal01: Vector3 = _normales_anillo[base0 + siguiente_lado]
+			var normal10: Vector3 = _normales_anillo[base1 + lado]
+			var normal11: Vector3 = _normales_anillo[base1 + siguiente_lado]
 			var p00: Vector3 = _puntos[anillo] + normal00 * radio
 			var p01: Vector3 = _puntos[anillo] + normal01 * radio
 			var p10: Vector3 = _puntos[anillo + 1] + normal10 * radio
@@ -585,52 +680,51 @@ func _emitir_toro_de_canamo(
 	banda: int,
 	cantidad: int,
 ) -> void:
+	# Los ocho radiales del anillo, una vez: antes se recalculaban DENTRO de cada
+	# vertice, seis veces por cada uno de los 192 vertices del toro.
+	for lado: int in LADOS_TUBO:
+		_radiales_toro[lado] = (
+			lateral * _cos_tubo[lado] + vertical * _sin_tubo[lado]).normalized()
+
 	for lado: int in LADOS_TUBO:
 		var lado_siguiente: int = (lado + 1) % LADOS_TUBO
-		var angulo_lado_0: float = TAU * float(lado) / float(LADOS_TUBO)
-		var angulo_lado_1: float = TAU * float(lado_siguiente) / float(LADOS_TUBO)
+		var radial_0: Vector3 = _radiales_toro[lado]
+		var radial_1: Vector3 = _radiales_toro[lado_siguiente]
+		var u0: float = (float(banda) + float(lado) / float(LADOS_TUBO)) \
+			/ float(cantidad)
+		var u1: float = (float(banda) + float(lado + 1) / float(LADOS_TUBO)) \
+			/ float(cantidad)
 		for seccion: int in LADOS_CUERDA:
 			var seccion_siguiente: int = (seccion + 1) % LADOS_CUERDA
-			var angulo_cuerda_0: float = TAU * float(seccion) / float(LADOS_CUERDA)
-			var angulo_cuerda_1: float = TAU * float(seccion_siguiente) / float(LADOS_CUERDA)
-			var u0: float = (float(banda) + float(lado) / float(LADOS_TUBO)) \
-				/ float(cantidad)
-			var u1: float = (float(banda) + float(lado + 1) / float(LADOS_TUBO)) \
-				/ float(cantidad)
 			var v0: float = float(seccion) / float(LADOS_CUERDA)
 			var v1: float = float(seccion + 1) / float(LADOS_CUERDA)
 
-			_emitir_vertice_toro(centro, tangente, lateral, vertical,
-				angulo_lado_0, angulo_cuerda_0, Vector2(u0, v0))
-			_emitir_vertice_toro(centro, tangente, lateral, vertical,
-				angulo_lado_1, angulo_cuerda_0, Vector2(u1, v0))
-			_emitir_vertice_toro(centro, tangente, lateral, vertical,
-				angulo_lado_1, angulo_cuerda_1, Vector2(u1, v1))
-			_emitir_vertice_toro(centro, tangente, lateral, vertical,
-				angulo_lado_0, angulo_cuerda_0, Vector2(u0, v0))
-			_emitir_vertice_toro(centro, tangente, lateral, vertical,
-				angulo_lado_1, angulo_cuerda_1, Vector2(u1, v1))
-			_emitir_vertice_toro(centro, tangente, lateral, vertical,
-				angulo_lado_0, angulo_cuerda_1, Vector2(u0, v1))
+			_emitir_vertice_toro(centro, tangente, radial_0, seccion, Vector2(u0, v0))
+			_emitir_vertice_toro(centro, tangente, radial_1, seccion, Vector2(u1, v0))
+			_emitir_vertice_toro(centro, tangente, radial_1, seccion_siguiente, Vector2(u1, v1))
+			_emitir_vertice_toro(centro, tangente, radial_0, seccion, Vector2(u0, v0))
+			_emitir_vertice_toro(centro, tangente, radial_1, seccion_siguiente, Vector2(u1, v1))
+			_emitir_vertice_toro(centro, tangente, radial_0, seccion_siguiente, Vector2(u0, v1))
 
 
+## Un vertice del toro de cañamo. Recibe el radial YA calculado y el INDICE de
+## la seccion en vez del angulo: antes calculaba el coseno y el seno del mismo
+## angulo DOS VECES —una para la normal y otra para la posicion— mas el radial
+## entero, por cada uno de los 192 vertices de cada anillo.
 func _emitir_vertice_toro(
 	centro: Vector3,
 	tangente: Vector3,
-	lateral: Vector3,
-	vertical: Vector3,
-	angulo_lado: float,
-	angulo_cuerda: float,
+	radial: Vector3,
+	seccion: int,
 	uv: Vector2,
 ) -> void:
-	var radial: Vector3 = _normal_anillo(lateral, vertical, angulo_lado)
-	var normal: Vector3 = (
-		radial * cos(angulo_cuerda) + tangente * sin(angulo_cuerda)
-	).normalized()
+	var c: float = _cos_cuerda[seccion]
+	var sn: float = _sin_cuerda[seccion]
+	var normal: Vector3 = (radial * c + tangente * sn).normalized()
 	var radio_central: float = radio + radio_refuerzo * 0.65
 	var posicion: Vector3 = centro \
-		+ radial * (radio_central + radio_refuerzo * cos(angulo_cuerda)) \
-		+ tangente * (radio_refuerzo * sin(angulo_cuerda))
+		+ radial * (radio_central + radio_refuerzo * c) \
+		+ tangente * (radio_refuerzo * sn)
 	_emitir_vertice(posicion, normal, uv)
 
 

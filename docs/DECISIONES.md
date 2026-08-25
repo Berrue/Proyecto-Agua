@@ -39,6 +39,8 @@ está en `DISENO.md`; esto es la capa técnica y de proceso.
 | **Reserva de flotabilidad ×6 el peso** (sondas `volume` 1,5→3,0 y `height` 1,4→2,8; fuera el override `max_submersion_depth`) | Manda el TECHO DE INUNDACIÓN, no el oleaje: con la reserva vieja (×3) el barco perdía la flotación con el nivel medio en 0,667, por DEBAJO del 0,689 al que la cubierta queda al ras — se hundía antes de que se viera entrar el agua, y no había forma honesta de avisar (regla 8). Duplicar volumen y altura a la vez conserva el cociente V/h, así que la línea de agua y el periodo de cabeceo no se mueven: sube solo el techo. Medido: el oleaje se comporta igual y el LEVIATÁN pasa de sepultar el barco el 86 % del paso de la ola al 13 %, sin pop-up (pico vertical 21,8 vs 21,9 m/s). |
 | **La tormenta embarca agua por MAR GRUESA, no por olas sobre la borda** (`embarque_por_mar`, cuadrático desde furia 5) | Medido, y contradice lo que el plan daba por hecho: con este océano a las olas les falta **más de un metro** para rebasar la regala incluso a furia 9 (Hs 18 m), y no hay ni un pantocazo. No es un fallo del modelo — las olas del espectro son largas y un pesquero de 13 m las cabalga siguiendo la superficie. `Ocean.get_breaking()` tampoco sirve de disparador: devuelve ~1,0 en todas las furias. Pero un pesquero en temporal SÍ embarca agua, y no por encima de la regala: entra pulverizada por el viento y a crestazos contra el costado. Eso es lo que se modela, y entra **por barlovento**, de donde sale gratis la decisión de qué celda achicar primero. Las olas sobre la borda siguen ahí para lo que sí las rebasa: el tsunami. |
 | **Umbrales 0,55 (alarma) y 0,85 sostenido 3 s (naufragio)**, calculados en frío | Corrigen los de `CLIMA.md` §6.4 (0,75 y 1,0), escritos antes de tener la geometría: 0,75 caía POR ENCIMA del punto sin retorno (0,689), o sea una alarma que suena cuando ya no puedes salvarte. El naufragio va por encima del techo físico (0,833) para que la señal confirme lo que la física ya decidió, nunca lo provoque. `agua_tests` lee la escena real y exige la cadena `alarma < punto sin retorno < techo < naufragio`. |
+| **El agua HUNDE, no TUMBA** (`FloatingBody3D.sesgo_escora` = 0; la fuerza usa la inundación MEDIA, no la de cada celda) | ⚠️ **Supersede** la mitad de «flotabilidad por celdas regala la escora sola» de más arriba: el reparto por celdas sigue existiendo como fontanería, pero ya NO inclina el casco. Decisión del usuario, por dos motivos y el segundo pesa más: la escora estorbaba al game feel, y era **ilegible** — era el ÚNICO aviso de dónde estaba el agua, así que si no se lee, el sistema entero queda mudo. El castigo pasa a ser hundirse recto y el aviso pasa a ser VER el agua en cubierta. De paso la matemática en frío deja de ser aproximada: el punto sin retorno (0,689) y los umbrales se calcularon suponiendo agua pareja, que es justo lo que hay ahora. |
+| **El agua que no cabe en una celda REBOSA a las demás** (`flood_probe`) | Lo destapó quitar la escora, y llevaba ahí desde siempre: la mar gruesa entra siempre por el MISMO costado, esas celdas llegaban a 1,0 y el `clampf` tiraba el resto sin decir nada. Medido: a furia 8 entraban **0,0116/s en vez de 0,0198/s** —un 41 % del agua de la tormenta perdida— y el barco tardaba un 40 % más en hundirse. Antes lo disimulaba la propia escora, que hundía el costado mojado y enterraba otras celdas. Un `clamp` que descarta en silencio es la forma más cara de perder agua. |
 | **La voz se pierde con LO QUE SE OYE, no con una curva propia** (`WeatherAudio.ruido01()` → `VozModel`) | El enmascaramiento de voz es la mecánica social del juego (CLIMA §3.5): en calma habláis de popa a proa, en temporal solo al lado. Si el ruido que tapa la voz fuera una curva aparte de la que mezcla las camas, bastaría con que alguien afinara una para que la voz se perdiera sin que el jugador oyera nada raro — feedback que miente (regla 8). Por eso el ruido lo publica el mismo autoload que mezcla el clima, como suma equal-power de lo que ya está sonando, y la furia entra por el viento y no por un término inventado. El filtro va en el BUS y no en el hablante porque es TU oído el que está tapado, no su boca. Y `tests/voz_tests.tscn` ata el número al casco: en el pico, el radio útil tiene que ser menor que la eslora, o la mecánica no existe. |
 | **El dial de dificultad se prueba JUGÁNDOLO, no comparando caudales** | El ingreso no es constante: según entra agua el barco se hunde, se le entierran celdas y entra más — la espiral. Comparar dos números sobre el papel no la ve. El test simula furia 8 con la bomba a pleno (aguanta), con medio caudal (una persona sola pierde terreno) y sin nadie (naufragio en ~30 s). Cuadrar `embarque_mar_max` contra `caudal_bomba` es lo que fija la dificultad, y por eso los dos viven en el MISMO `.tres`. |
 | **La bomba es un ciclo de dos tiempos, no un grifo** (`carga_camara`: mantener chupa de la celda, soltar escupe al mar) | Un caudal continuo premiaba apretar y no soltar, que es la ausencia de mecánica. Con cámara, mantener deja de ser óptimo solo: llena, la bomba deja de mover agua. Tres consecuencias que el grifo no daba. (i) El agua de la cámara **sigue contando a bordo** (`AguaEmbarcada.nivel` = celdas + cámaras): si no, chupar y no escupir nunca sería bajar el nivel gratis y burlar el umbral de naufragio. (ii) Como el agua sale de la CELDA al chupar pero del BARCO al escupir, cada tiempo tiene su feedback — chupar corrige la escora, escupir baja el nivel. (iii) La capacidad se cancela en `caudal_sostenido` (media armónica de los dos tiempos), así que más cámara es comodidad y no caudal: son los dos ejes separados que los tiers necesitan. |
@@ -68,9 +70,12 @@ La review independiente del plan maestro dejó 6 hallazgos. Estado real a día d
    barco replicado, jugadores viéndose en cubierta). Para el juguete coop
    completo faltan props y porteo en red (R1 de `docs/RED.md`).
 5. **El test de paridad CPU/GPU no corre en headless** (sin RenderingDevice — verificado).
-   **→ Mitigado, no resuelto:** paridad visual con `parity_markers.gd` + lado CPU en
-   `f1_tests.gd`. Pendiente: golden vectors regenerados en máquina con GPU + test GPU
-   real como tool de editor.
+   **→ RESUELTO (24-ago-2026)** exactamente como PLAN.md lo había diseñado: tool con
+   GPU (`addons/ocean/debug/golden_gen.tscn`) que genera `tests/golden/ocean_golden.res`
+   + test headless (`tests/parity_tests.tscn`) que compara contra él con tolerancia de
+   1 mm. Medido: peor 0,5 mm sobre 196.608 muestras. La sonda es un shader 2D que
+   incluye el MISMO `ocean_waves.gdshaderinc` que el mar —no una copia—, así que lo que
+   se compara es el shader de verdad.
 6. **Menores, todos abiertos:** elegir driver (Vulkan dev / D3D12 ship — uno);
    el riesgo Discord (voz por proximidad compite con el Discord que ya usan los grupos);
    no hay break force nativo en joints 3D de Godot (afectaba al chigre/red — el
@@ -546,6 +551,43 @@ se salía de la red por accidente o cerrando el proceso— y una clase pura más
 la regla 11 aplicada al color y al margen. Queda pendiente que cambiar el nombre
 con la partida abierta reetiquete (hoy solo viaja al entrar) y que la lista diga
 también quién está en qué estación. `tests/partida_tests.tscn` (56 checks).
+
+### 2026-08-24 — Golden vectors: la deriva CPU/GPU deja de ser silenciosa
+
+**Contexto:** el océano está escrito dos veces (`wave_proxy.gd` y
+`ocean_waves.gdshaderinc`) y la regla 3 exige que sean espejos. Si divergen, el barco flota a una
+altura y la pantalla dibuja otra, sin un solo error en consola. La única defensa eran las esferas
+de `parity_markers.gd`, que dependen de que alguien las active y las mire.
+
+**Decisión:** implementar los golden vectors tal como `PLAN.md` §Verificación los había diseñado,
+en dos mitades, porque **en headless no existe `RenderingDevice`** y el shader no se puede
+ejecutar en CI. Una sonda con GPU genera la tabla y se commitea; un test headless compara la CPU
+contra ella con tolerancia de 1 mm.
+
+**Por qué así:** la sonda (`golden_probe.gdshader`) es un shader **2D** que `#include`ea el mismo
+archivo que el mar y recibe los uniforms del mismo `Ocean.apply_to_material()`. Ni port, ni copia,
+ni compute shader en GLSL — cualquiera de esas tres habría hecho que el test comprobara la copia.
+Y es 2D y no espacial porque lo que hay que capturar es un NÚMERO, no un mar dibujado: con un
+shader espacial habría proyección, profundidad e interpolación entre el valor y la lectura. Aquí
+cada píxel es una muestra.
+
+**Tres trampas que costaron una tarde, las tres anotadas en el código:**
+1. **El espacio de color envenena la lectura.** Pedir `Color` al `Image` devolvía 0,303 donde se
+   había escrito 0,612 (sRGB→lineal) y daba **39 m** de error. Hay que leer bytes crudos.
+2. **El render target sale en RGB8, sin alfa.** El empaquetado de 4 canales se salía del array.
+   Con 3 canales quedan 24 bits sobre 128 m: 8 micras, de sobra para el milímetro que se pide.
+3. **`jacobian_at()` no era comparable con `ocean_jacobian()`.** La primera INVIERTE la posición
+   (quien pregunta desde el juego da una de mundo); la segunda recibe la de reposo, porque en el
+   vertex shader la malla ya lo está. Darles el mismo punto acusaba **0,22 m** de divergencia
+   inexistente. Se separó en `jacobian_en_reposo()`, y esa separación es una mejora por sí sola:
+   estaban fundidas y eso hacía imposible comparar la mitad que de verdad espeja al shader.
+
+**Consecuencias:** 196.608 muestras, peor diferencia **0,5 mm**, y ese peor caso cae en
+`t = 941,7 s` — o sea que es la precisión de 32 bits de la GPU acumulando fase, no una divergencia
+de fórmula. Eso valida de paso la tolerancia de 1 mm que PLAN.md había elegido. **Regenerar la
+tabla pasa a ser obligatorio en todo commit que toque una fórmula del agua.** El arnés incluye un
+test de que el propio arnés puede fallar (compara contra una furia alterada a propósito y exige
+que lo cace), porque un test de paridad que no puede fallar es peor que ninguno.
 
 ## Plantilla para decisiones nuevas
 

@@ -353,6 +353,36 @@ func _causa() -> String:
 	return "furia %.0f, %s" % [Ocean.fury, _barco.probes[peor].name]
 
 
+## Deja el barco con EXACTAMENTE este nivel de agua, repartido parejo.
+##
+## Es una herramienta de DEBUG: sirve para mirar el agua sin esperar veinte
+## minutos de lluvia, que es justo lo que costaba antes juzgar si la piscina se
+## lee bien. El juego nunca la llama — el agua entra por sus fuentes.
+##
+## Reparte parejo a proposito: desde que el agua no inclina (ver
+## `FloatingBody3D._empuje_efectivo`) el reparto entre celdas ya no significa
+## nada para el jugador, y un llenado parejo es el que se corresponde con lo que
+## se ve en cubierta.
+func fijar_nivel(objetivo: float) -> void:
+	if _barco == null:
+		return
+	var nivel_pedido: float = clampf(objetivo, 0.0, 1.0)
+	_barco.bail_out(1.0)
+	for bomba in _bombas:
+		if is_instance_valid(bomba):
+			bomba.vaciar_camara()
+	if nivel_pedido > 0.0:
+		for i in _barco.probe_count():
+			_barco.flood_probe(i, nivel_pedido)
+	nivel = _nivel_a_bordo()
+	# Bajar el agua a mano tambien tiene que apagar el naufragio: si no, el barco
+	# se queda declarado perdido con la cubierta seca.
+	if nivel_pedido < balance.umbral_naufragio:
+		hundido = false
+		_acumulado_naufragio = 0.0
+	_revisar_umbrales(0.0)
+
+
 ## Devuelve el barco a la superficie, seco y adrizado. Hoy es la salida de
 ## emergencia del HUD de debug; el dia que exista el puerto sera el reflote de
 ## verdad (docs/DISENO.md: naufragar es barato, se pierde la captura).

@@ -1,4 +1,4 @@
-[gd_scene load_steps=10 format=3]
+[gd_scene load_steps=6 format=3]
 
 [ext_resource type="Script" path="res://game/props/soporte_cania.gd" id="1_soporte"]
 
@@ -6,14 +6,6 @@
 albedo_color = Color(0.357, 0.325, 0.278, 1)
 metallic = 0.5
 roughness = 0.7
-
-[sub_resource type="StandardMaterial3D" id="Mat_madera"]
-albedo_color = Color(0.45, 0.35, 0.22, 1)
-roughness = 0.9
-
-[sub_resource type="StandardMaterial3D" id="Mat_grip"]
-albedo_color = Color(0.2, 0.2, 0.22, 1)
-roughness = 1.0
 
 [sub_resource type="BoxMesh" id="Mesh_base"]
 size = Vector3(0.07, 0.16, 0.07)
@@ -27,20 +19,6 @@ rings = 1
 
 [sub_resource type="SphereShape3D" id="Shape_zona"]
 radius = 0.3
-
-[sub_resource type="CylinderMesh" id="Mesh_tubo"]
-top_radius = 0.012
-bottom_radius = 0.018
-height = 1.4
-radial_segments = 6
-rings = 1
-
-[sub_resource type="CylinderMesh" id="Mesh_grip"]
-top_radius = 0.026
-bottom_radius = 0.026
-height = 0.28
-radial_segments = 8
-rings = 1
 
 [node name="SoporteCania" type="Marker3D"]
 script = ExtResource("1_soporte")
@@ -61,18 +39,6 @@ collision_mask = 0
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Zona"]
 shape = SubResource("Shape_zona")
 
-[node name="CanaVisual" type="Node3D" parent="."]
-visible = false
-
-[node name="Tubo" type="MeshInstance3D" parent="CanaVisual"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.62, 0)
-mesh = SubResource("Mesh_tubo")
-surface_material_override/0 = SubResource("Mat_madera")
-
-[node name="Empunadura" type="MeshInstance3D" parent="CanaVisual"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.06, 0)
-mesh = SubResource("Mesh_grip")
-surface_material_override/0 = SubResource("Mat_grip")
-
-[node name="Punta" type="Marker3D" parent="CanaVisual"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.32, 0)
+[node name="Cuna" type="Marker3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.852525, -0.522687, 0, 0.522687, 0.852525, 0, 0.18, 0)
+editor_description = "Donde se muda el pivote de la caña al clavarla. La inclinacion (BASE_RAD del script) la apunta fuera de la borda y el alto deja la culata a ras del pie."

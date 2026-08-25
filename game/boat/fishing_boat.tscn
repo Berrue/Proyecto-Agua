@@ -10,6 +10,12 @@
 [ext_resource type="PackedScene" path="res://game/props/cubo_cebo.tscn" id="7_cubo"]
 [ext_resource type="Script" path="res://game/boat/agua_embarcada.gd" id="8_agua"]
 [ext_resource type="Resource" path="res://resources/agua/agua_embarcada.tres" id="9_agua_balance"]
+[ext_resource type="Script" path="res://game/boat/agua_cubierta.gd" id="10_agua_cubierta"]
+[ext_resource type="Curve" path="res://resources/agua/profundidad_cubierta.tres" id="11_curva_agua"]
+[ext_resource type="Script" path="res://game/boat/gobierno.gd" id="12_gobierno"]
+[ext_resource type="Resource" path="res://resources/gobierno/gobierno.tres" id="13_gobierno_balance"]
+[ext_resource type="Resource" path="res://resources/gobierno/motor_nafta.tres" id="14_motor_balance"]
+[ext_resource type="PackedScene" path="res://game/boat/rueda_timon.tscn" id="15_rueda_timon"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_hull"]
 size = Vector3(5.4, 1.6, 9.75)
@@ -137,6 +143,8 @@ editor_description = "Anclajes nativos de Godot: sobreviven a cada reexportacion
 [node name="Helm" type="Marker3D" parent="UpgradeSockets" unique_id=661539885]
 editor_description = "Eje del timón visible; -Z local mira hacia el jugador. Se puede reemplazar o animar sin reexportar colisiones."
 transform = Transform3D(-1, 0, 2.5351817e-06, 0, 1, 0, -2.5351817e-06, 0, -1, 0.25, 1.76, 3.085)
+
+[node name="RuedaTimon" parent="UpgradeSockets/Helm" instance=ExtResource("15_rueda_timon")]
 
 [node name="Sonar" type="Marker3D" parent="UpgradeSockets" unique_id=2077133951]
 editor_description = "Pantalla de sonar a babor del timón; -Z local mira hacia el jugador dentro de la cabina."
@@ -291,6 +299,17 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.58, 1.75, 4.5)
 [node name="AletaEstribor" type="Marker3D" parent="PuntosBorda"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.58, 1.75, 4.5)
 
+[node name="AguaCubierta" type="MeshInstance3D" parent="."]
+editor_description = "El agua que se VE en cubierta: el indicador de todo el sistema. Presentación pura, corre en todas las máquinas. Se dimensiona sola desde HullShape."
+script = ExtResource("10_agua_cubierta")
+curva_profundidad = ExtResource("11_curva_agua")
+
 [node name="AguaEmbarcada" type="Node" parent="."]
 script = ExtResource("8_agua")
 balance = ExtResource("9_agua_balance")
+
+[node name="Gobierno" type="Node" parent="."]
+editor_description = "El gobierno: plano de deriva, hélice y pala. Host-only, y aplica con apply_force para no pisar el constant_force de la flotabilidad. Ver docs/TIMON.md."
+script = ExtResource("12_gobierno")
+balance = ExtResource("13_gobierno_balance")
+motor = ExtResource("14_motor_balance")

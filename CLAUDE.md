@@ -45,6 +45,7 @@ solo se ve en `git status`). Tras cualquier `--import`, comprobar
 <godot> --headless --path . tests/boat_asset_tests.tscn
 <godot> --headless --path . tests/weather_tests.tscn
 <godot> --headless --path . tests/parte_tests.tscn
+<godot> --headless --path . tests/parity_tests.tscn
 <godot> --headless --path . tests/typography_tests.tscn
 <godot> --headless --path . tests/farol_tests.tscn
 <godot> --headless --path . tests/porteo_tests.tscn
@@ -58,6 +59,7 @@ solo se ve en `git status`). Tras cualquier `--import`, comprobar
 <godot> --headless --path . tests/agua_tests.tscn
 <godot> --headless --path . tests/bomba_tests.tscn
 <godot> --headless --path . tests/volcado_tests.tscn
+<godot> --headless --path . tests/gobierno_tests.tscn
 <godot> --headless --path . tests/voz_tests.tscn
 <godot> --headless --path . tests/microfono_tests.tscn
 <godot> --headless --path . tests/menu_tests.tscn
@@ -75,14 +77,35 @@ aquí". Un arnés nuevo entra en esta lista **en el mismo commit** que lo crea.
   rojo a propósito** — el criterio no se cumple (~4,7 ms de mediana en build debug,
   ~2,9 ms incluso en el mínimo). No está roto: es la medición que F2 pedía y que
   hasta ahora nadie había hecho. La lectura y las palancas las imprime él mismo.
+- `tests/capture_manguera_perf.tscn` mide el coste de la manguera de la bomba, y
+  se corre CON `--headless`. Nació de una caída a 7 fps: la manguera se
+  redibujaba entera 120 veces por segundo (medio segundo de CPU por segundo de
+  juego) aunque nadie la tocara. Dibujar es presentación y va en `_process`,
+  nunca en el tick de física.
+- `tests/capture_agua_cubierta.tscn` saca los tres momentos que el jugador tiene
+  que leer del agua de cubierta (charco / rodilla=alarma / cintura=naufragio).
+  Necesita ventana: `<godot> --path . tests/capture_agua_cubierta.tscn`. Los tests
+  garantizan los numeros; que un charco SE VEA charco solo se puede mirar — de
+  hecho asi se cazaron dos fallos que la suite daba por buenos (el agua asomando
+  por fuera de la amura y media cubierta seca por un filtro mal puesto).
 - Los `tests/capture_*.tscn` no son tests: generan capturas o informes para revisar.
   `capture_perf` mide el frame time (p50/p95/p99 y peor frame) en tormenta furia 7-9;
   necesita ventana y GPU, así que **no se corre con `--headless`**:
   `<godot> --path . tests/capture_perf.tscn -- --perf-out=<archivo> [--perf-res=1920x1080]`.
-- Paridad CPU/GPU: no hay test automático (headless no tiene RenderingDevice).
-  El comprobador es VISUAL: `addons/ocean/debug/parity_markers.gd` clava esferas
-  calculadas en CPU sobre el mar que dibuja la GPU. Si se despegan, hay deriva.
-  Actívalo desde el HUD de debug al tocar cualquier fórmula del agua.
+- **Paridad CPU/GPU: SÍ hay test automático** (`tests/parity_tests.tscn`, 24-ago-2026).
+  Va en dos mitades porque en headless no existe `RenderingDevice`:
+  1. `addons/ocean/debug/golden_gen.tscn` corre **con ventana y GPU**, le pregunta al
+     shader de verdad (vía `golden_probe.gdshader`, que incluye el mismo
+     `ocean_waves.gdshaderinc`) el valor en 1024 puntos × 8 instantes × 3 furias ×
+     2 semillas, y guarda `tests/golden/ocean_golden.res`.
+  2. `tests/parity_tests.tscn` corre **headless** y compara la CPU contra esa tabla;
+     falla si algo se aparta más de 1 mm. Medido hoy: peor 0,5 mm, y ese peor caso
+     está en `t = 941,7 s`, o sea que es la precisión de 32 bits de la GPU
+     acumulando fase — no una divergencia de fórmula.
+  ⚠️ **Regenerar la tabla es OBLIGATORIO en todo commit que toque una fórmula del
+  agua**, y va en el mismo commit. Si no, el test compara CPU nueva contra GPU vieja.
+  El comprobador VISUAL (`parity_markers.gd`, esferas de CPU sobre el mar de la GPU)
+  sigue existiendo y sirve para ver DÓNDE se despega, no para saber si se despegó.
 
 ## Mapa
 
@@ -113,7 +136,11 @@ game/
   props/               Portable3D (la base de todo lo portable), farol.tscn +
                        gancho_farol.tscn (docs/FAROL.md), roles-objeto (radio,
                        llave del motor, caja, bichero) y soporte_cania.tscn
-                       (la caña clavada pesca sola).
+                       (la caña clavada pesca sola). Y cubo_cebo.tscn: el balde
+                       de duelas con su cebo (`models/bait_bucket.glb`, fuente
+                       en tools/build_bait_bucket.py) — el nivel se dibuja
+                       escalando la masa y posando el copete, con el calibre
+                       del interior leído del propio GLB. Ver docs/PESCA.md §5.
   net/                 Autoload `Net` (ENet localhost, F9 = host / F10 = unirse;
                        `Net.Transporte` es la puerta ENET/STEAM y ENET es el
                        defecto A PROPOSITO: Steam es una sesion por PC y se
@@ -302,8 +329,16 @@ THIRD_PARTY.md         Licencias. Se actualiza EN EL MISMO COMMIT que la depende
 - **Agua embarcada y achique (24-ago-2026):** el barco se inunda y se puede
   hundir, y la bomba lo achica. `AguaEmbarcada` (host-only, hijo del barco) mete
   agua por mar gruesa —vía barlovento—, lluvia, olas sobre la borda y celdas
-  enterradas; el agua no es masa, es empuje que se le quita a la celda, así que
-  la escora sale sola. Umbrales calculados en frío (alarma 0,55, naufragio 0,85
+  enterradas; el agua no es masa, es empuje que se le quita al casco.
+  ⚠️ Desde el 24-ago el agua **NO INCLINA**: la fuerza usa la inundación MEDIA
+  (`sesgo_escora` = 0), así que el barco se hunde RECTO. La escora estorbaba al
+  feel y sobre todo era ILEGIBLE — era el único aviso de dónde estaba el agua, así
+  que el sistema quedaba mudo. El aviso pasa a ser VER el agua en cubierta (paso 2
+  del rediseño). Y quitarla destapó que `flood_probe` TIRABA el agua que no cabía
+  en una celda: la mar gruesa entra siempre por barlovento, esas celdas saturaban
+  y se perdía el 41 % del agua de la tormenta (0,0116/s medidos contra 0,0198/s
+  prometidos). Ahora rebosa a las demás. Ver DECISIONES.
+  Umbrales calculados en frío (alarma 0,55, naufragio 0,85
   sostenido 3 s) y reserva de flotabilidad subida a ×6 el peso para que el
   naufragio se pueda leer y avisar. La bomba achica LA CELDA del cabezal —elegir
   cuál es la decisión—, al 50 % en solitario y al 100 % con alguien dirigiendo la

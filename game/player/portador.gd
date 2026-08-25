@@ -87,6 +87,11 @@ var bomba: ManualBilgePump = null
 ## quien dirige la manguera conserva el movimiento.
 var manguera: ManualBilgePump = null
 
+## La rueda del timon que llevo, o null. Las dos manos: la rueda ES el agarre del
+## timonel (`DISENO.md` §2), y de ahi sale que no pueda pescar ni achicar sin un
+## solo candado de rol. Ver `docs/TIMON.md` §4.
+var timon: RuedaTimon = null
+
 ## Lo ultimo que se le PIDIO a la bomba sobre la palanca. No es "esta bombeando"
 ## —eso lo dice la bomba, y en red lo decide el host—: es lo que este jugador
 ## mando, para no repetir el evento sesenta veces por segundo.
@@ -194,6 +199,10 @@ func _unhandled_input(event: InputEvent) -> void:
 	if modo_presentacion:
 		return
 	if event.is_action_pressed(&"belt"):
+		# En la rueda, Q es EL CONTACTO.
+		if timon != null:
+			_dar_al_contacto()
+			return
 		# En la palanca, Q es el SELECTOR de la bomba y no el cinturon: con las
 		# dos manos puestas el cinturon no se puede usar de todas formas, asi que
 		# la tecla estaba libre y no hace falta inventar una nueva.
@@ -207,6 +216,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	if not event.is_action_pressed(&"interact"):
 		return
 	if objeto == null:
+		if _interactuar_timon():
+			return
 		if _interactuar_bomba():
 			return
 		if _interactuar_soporte():
@@ -429,6 +440,8 @@ func _liberar_manos() -> void:
 		usadas += BombaModel.MANOS_BOMBEAR
 	if manguera != null:
 		usadas += BombaModel.MANOS_MANGUERA
+	if timon != null:
+		usadas += PuestoTimonModel.MANOS_TIMON
 	_player.hands_used = usadas
 	if usadas == 0:
 		_player.carry_slowdown = 1.0
@@ -528,6 +541,79 @@ func _soporte_a_la_vista() -> SoporteCania:
 			return n as SoporteCania
 		n = n.get_parent()
 	return null
+
+
+# =============================================================================
+#  El puesto de timon: E para agarrar la rueda (docs/TIMON.md §4)
+# =============================================================================
+
+## E sobre la rueda. Soltar manda sobre agarrar, para que salir sea siempre la
+## misma tecla — el mismo orden que la bomba.
+##
+## Devuelve true solo si el gesto se hizo, para que una E fallida caiga al
+## siguiente candidato de la cadena.
+func _interactuar_timon() -> bool:
+	if timon != null:
+		timon.liberar_estacion()
+		timon = null
+		# Recontar y no poner a cero: la leccion que ya costo un agujero con la
+		# bomba (ver `_liberar_manos`).
+		_liberar_manos()
+		return true
+	var t := _timon_a_la_vista()
+	if t == null:
+		return false
+	# En solitario no hay host, asi que este Portador arbitra con la MISMA
+	# funcion pura que usaria el. En F8 esto pasa a pedirsele al host, igual que
+	# la bomba.
+	var motivo := PuestoTimonModel.arbitrar(PuestoTimonModel.Verbo.OCUPAR,
+			t.ocupante, _peer(), _manos_usadas())
+	if motivo != PuestoTimonModel.Motivo.OK:
+		_avisar(PuestoTimonModel.texto_motivo(motivo))
+		return false
+	t.ocupar_estacion(_peer(), _player)
+	timon = t
+	_liberar_manos() # recuenta: la rueda son las dos
+	return true
+
+
+func _timon_a_la_vista() -> RuedaTimon:
+	if not _rayo.is_colliding():
+		return null
+	var n := _rayo.get_collider() as Node
+	while n != null:
+		if n is RuedaTimon:
+			return n as RuedaTimon
+		n = n.get_parent()
+	return null
+
+
+## ¿Lleva este jugador la llave del motor? Vale en la mano o en el cinturon —que
+## es donde vive—, porque agarrar la rueda deja las manos llenas y la llave solo
+## puede estar en el cinturon a partir de ese momento.
+func _lleva_la_llave() -> bool:
+	if objeto != null and objeto.name == &"LlaveMotor":
+		return true
+	for p in cinturon:
+		if p != null and p.name == &"LlaveMotor":
+			return true
+	return false
+
+
+## Q en la rueda: dar al contacto. Arranca si esta parado, para si esta en marcha.
+func _dar_al_contacto() -> void:
+	if timon == null:
+		return
+	var motivo := timon.dar_al_contacto(_lleva_la_llave())
+	if motivo != MotorModel.MotivoArranque.OK:
+		_avisar(MotorModel.texto_motivo(motivo))
+
+
+## Se lo dice al jugador por su nombre. Un gesto que no hace nada y no explica
+## por que es el "me robo" que el juego promete no hacer (regla 8).
+func _avisar(texto: String) -> void:
+	if _hud != null and texto != "":
+		_hud.set_aviso(texto, AVISO_SEG)
 
 
 # =============================================================================
@@ -828,6 +914,16 @@ func _texto_prompt() -> String:
 	# hecho nada (regla 8).
 	if _pidiendo >= 0:
 		return "pidiendo…"
+	# La rueda manda sobre todo lo demas, igual que la bomba: mientras la llevas,
+	# lo unico que hay que saber es como gobernar y como salir. El texto lo
+	# redacta el modelo puro para que diga el ESTADO y no solo la tecla — "falta
+	# la llave" manda a alguien a buscarla, "el tanque está seco" manda a por el
+	# bidon, y son dos problemas distintos.
+	if timon != null:
+		var g := timon.gobierno()
+		if g != null:
+			return PuestoTimonModel.texto_puesto(g.arrancado, _lleva_la_llave(),
+					g.muesca, g.litros <= 0.0)
 	# La bomba manda sobre todo lo demas: mientras la ocupas, lo unico que hay
 	# que saber es como bombear y como salir.
 	if bomba != null:
@@ -867,6 +963,11 @@ func _texto_prompt() -> String:
 		if not b.estacion_libre():
 			return "la bomba está ocupada"
 		return "E  bombear"
+	var rt := _timon_a_la_vista()
+	if rt != null:
+		if not rt.estacion_libre():
+			return "lo lleva otro"
+		return "E  llevar el timón"
 	var s := _soporte_a_la_vista()
 	if s != null and _rod != null:
 		if s.ocupado and _rod.soporte == s:

@@ -122,6 +122,26 @@ unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 6
 
+[node name="AguaSep" type="HSeparator" parent="Panel/Margin/Scroll/VBox"]
+layout_mode = 2
+
+[node name="AguaLabel" type="Label" parent="Panel/Margin/Scroll/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "AGUA EN CUBIERTA"
+
+[node name="AguaSlider" type="HSlider" parent="Panel/Margin/Scroll/VBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 22)
+layout_mode = 2
+max_value = 1.0
+step = 0.01
+
+[node name="AguaButtons" type="HBoxContainer" parent="Panel/Margin/Scroll/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 6
+
 [node name="TruenoSep" type="HSeparator" parent="Panel/Margin/Scroll/VBox"]
 layout_mode = 2
 
@@ -169,7 +189,7 @@ text = "Marcadores de paridad"
 [node name="Hint" type="Label" parent="Panel/Margin/Scroll/VBox"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 11
-text = "WASD moverse · espacio saltar · ESC liberar raton
+text = "Ñ cerrar este menu · WASD moverse · espacio saltar · ESC liberar raton
 1/2/3 lanzar tsunami · 0 cancelarlo · N +3 horas
-T trueno · R rayo · P generar parte"
+T trueno · R rayo · P generar parte · C cambiar caña · B reflotar"
 autowrap_mode = 2

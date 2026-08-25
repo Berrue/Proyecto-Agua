@@ -32,9 +32,12 @@ func _ready() -> void:
 	_test_rod_tiers_ladder()
 	_test_rod_strengthens_line()
 	_test_rod_reels_faster()
+	_test_sedal_enhebrado()
 	_test_bait_never_raises_band()
 	_test_bait_biases_to_the_big_one()
 	await _test_bait_charges_and_bucket()
+	await _test_bait_bucket_level()
+	await _test_aparejo_en_la_mano()
 	await _test_staked_bite_window()
 	await _test_fish_body()
 	await _test_wiring()
@@ -453,6 +456,202 @@ func _test_rod_reels_faster() -> void:
 
 
 # =============================================================================
+#  El sedal enhebrado y el aparejo
+# =============================================================================
+
+## EL FALLO SILENCIOSO QUE ESTE TEST EXISTE PARA CAZAR: `FishingRod.ENHEBRADO`
+## dice por donde pasa el hilo y `tools/build_fishing_rod.py` dice donde estan
+## las anillas. Son dos archivos, o sea que pueden separarse — y separados no
+## peta nada: el sedal simplemente se dibuja por FUERA de los aros, y solo se
+## ve mirando una captura de cerca. Aqui se comprueba contra la malla de verdad
+## que cada punto cae DENTRO de su aro, con hierro a los dos lados.
+func _test_sedal_enhebrado() -> void:
+	var modelo: Node3D = load("res://game/fishing/models/cania.glb").instantiate()
+	add_child(modelo)
+	var anillas := _mesh_of(modelo, "Guides")
+	var carrete := _mesh_of(modelo, "ReelRotor")
+	_check(anillas != null and carrete != null,
+		"el modelo de la caña trae anillas y carrete con su nombre")
+	if anillas == null or carrete == null:
+		modelo.queue_free()
+		return
+
+	var puntos := FishingRod.ENHEBRADO
+	_check(puntos.size() >= 3, "el sedal enhebrado tiene recorrido", "%d puntos" % puntos.size())
+
+	# Sale de la bobina: si el primer punto no toca el carrete, el hilo nace en
+	# el aire y la caña parece enhebrada por un fantasma.
+	var salida: Vector3 = puntos[0]
+	_check(_dist_a_malla(carrete, salida) < 0.010,
+		"el sedal nace EN la bobina del carrete",
+		"a %.1f mm del carrete" % (_dist_a_malla(carrete, salida) * 1000.0))
+
+	# Y de ahi sube por las anillas, cada una por dentro de su aro.
+	var verts := _verts_de(anillas)
+	var subiendo := true
+	for i in range(1, puntos.size()):
+		var p: Vector3 = puntos[i]
+		if p.y <= puntos[i - 1].y:
+			subiendo = false
+		var dentro := 0
+		var fuera := 0
+		var cerca: float = 1e9
+		for v in verts:
+			var d: float = v.distance_to(p)
+			cerca = minf(cerca, d)
+			if d < 0.035:
+				# Hierro por dentro (hacia el cuerpo) y por fuera (el aro): un
+				# punto apoyado en el cuerpo solo tendria de un lado.
+				if v.z > p.z:
+					dentro += 1
+				else:
+					fuera += 1
+		_check(cerca > 0.002 and cerca < 0.022 and dentro > 0 and fuera > 0,
+			"el sedal pasa por dentro de la anilla a %.2f m" % p.y,
+			"aro mas cerca a %.1f mm (dentro %d / fuera %d)" % [cerca * 1000.0, dentro, fuera])
+	_check(subiendo, "y va de la culata a la punta sin volver atras")
+
+	# El ultimo punto es la puntera, o sea el sitio de donde cuelga el aparejo y
+	# donde empalma el tramo que va al mundo (`Tip`, a 1.54 m).
+	var puntera: Vector3 = puntos[puntos.size() - 1]
+	_check(absf(puntera.y - 1.54) < 0.02 and absf(puntera.z) < 0.02,
+		"el sedal muere en la puntera, pegado a Tip",
+		"(%.3f, %.3f)" % [puntera.y, puntera.z])
+	modelo.queue_free()
+
+
+## Los vertices de una malla, ya en el espacio del MODELO (que es en el que
+## habla `FishingRod.ENHEBRADO`). Recorre TODAS las superficies: las piezas se
+## exportan con varios materiales, y mirar solo la primera dejaba fuera justo la
+## bobina de hilo del carrete.
+func _verts_de(malla: MeshInstance3D) -> PackedVector3Array:
+	var out := PackedVector3Array()
+	for s in malla.mesh.get_surface_count():
+		for v: Vector3 in malla.mesh.surface_get_arrays(s)[Mesh.ARRAY_VERTEX]:
+			out.append(malla.transform * v)
+	return out
+
+
+func _dist_a_malla(malla: MeshInstance3D, punto: Vector3) -> float:
+	var mejor: float = 1e9
+	for v in _verts_de(malla):
+		mejor = minf(mejor, v.distance_to(punto))
+	return mejor
+
+
+## El aparejo colgando: que EXISTA en reposo (que es la pose en la que el
+## jugador mira la caña el 90 % del tiempo), que cuelgue del hilo y no flote,
+## que se vaya al lanzar y tras una rotura, y que el cebo se vea donde esta
+## puesto — en el anzuelo.
+func _test_aparejo_en_la_mano() -> void:
+	var rod: FishingRod = load("res://game/fishing/fishing_rod.tscn").instantiate()
+	add_child(rod)
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+
+	var enhebrado := rod.get_node_or_null(^"RodPivot/Enhebrado") as MeshInstance3D
+	var aparejo := rod.get_node_or_null(^"RodPivot/Aparejo") as Node3D
+	_check(enhebrado != null and aparejo != null,
+		"la caña trae el sedal enhebrado y el aparejo cableados")
+	if enhebrado == null or aparejo == null:
+		rod.queue_free()
+		return
+
+	# Cuelgan del pivote a proposito: guardada la caña (porteo, soporte) se van
+	# con ella, y dibujados en su espacio no se despegan al girar la camara.
+	_check(enhebrado.transform.is_equal_approx(Transform3D.IDENTITY),
+		"el nodo del enhebrado se queda sin transform (los vertices ya vienen puestos)")
+	_check(not enhebrado.top_level and not aparejo.top_level,
+		"y viajan con la caña, no con el mundo")
+
+	var im := enhebrado.mesh as ImmediateMesh
+	_check(im != null and im.get_surface_count() == 1,
+		"EN REPOSO la caña ya tiene hilo dibujado",
+		"%d superficies" % (im.get_surface_count() if im != null else -1))
+	_check(aparejo.visible, "y anzuelo colgando")
+
+	var punta: Vector3 = rod._punta_hilo()
+	var cuelga: float = aparejo.position.distance_to(punta)
+	_check(absf(cuelga - FishingRod.APAREJO_LARGO) < 0.02,
+		"el anzuelo cuelga del sedal, a su largo exacto",
+		"%.2f m frente a %.2f m" % [cuelga, FishingRod.APAREJO_LARGO])
+	_check(aparejo.global_position.y < rod._tip.global_position.y,
+		"y cuelga hacia ABAJO, no hacia donde apunte la caña")
+
+	# Con el sedal echado el aparejo esta en el agua: no puede seguir en la mano.
+	rod.state = FishingRod.State.WAITING
+	rod._mover_aparejo(0.02)
+	_check(not aparejo.visible, "con el sedal echado el anzuelo no se queda en la mano")
+
+	# Y tras una rotura, el trozo de sedal cuelga PELADO: perder el pez se lleva
+	# tambien el aparejo (los 6 s del remanente), y verlo volver es "he montado".
+	rod.state = FishingRod.State.IDLE
+	rod._remnant_left = 6.0
+	rod._mover_aparejo(0.02)
+	_check(not aparejo.visible, "tras la rotura no hay anzuelo que colgar")
+	rod._remnant_left = 0.0
+	rod._mover_aparejo(0.02)
+	_check(aparejo.visible, "y vuelve cuando acaba el remanente: has montado otro")
+
+	# EL MISMO ANZUELO EN EL MAR. Echado el sedal el aparejo no desaparece: pasa
+	# a flotar con la boya, que es donde esta pescando. Sigue COLGANDO del nodo
+	# de la boya aunque se coloque a mano (`top_level` desengancha la
+	# transformada, no el arbol): asi hereda su visibilidad y no se queda un
+	# anzuelo suelto flotando en el mar despues de recoger.
+	var agua := rod.get_node_or_null(^"Bobber/Aparejo") as Node3D
+	var boya := rod.get_node(^"Bobber") as MeshInstance3D
+	_check(agua != null, "la boya lleva su aparejo")
+	if agua != null:
+		var en_mano := aparejo.find_child("Anzuelo", true, false) as MeshInstance3D
+		var en_agua := agua.find_child("Anzuelo", true, false) as MeshInstance3D
+		_check(en_mano != null and en_agua != null and en_mano.mesh == en_agua.mesh,
+			"y es EL MISMO anzuelo que llevas en la mano, no otro parecido")
+
+		# Flota AL COSTADO y fuera de la silueta de la bola: colgado debajo lo
+		# tapa la propia boya (32 cm de diametro) y no lo ve nadie desde
+		# cubierta — que era justo el fallo que este bloque protege.
+		boya.visible = true
+		boya.global_position = Vector3(4.0, 0.0, -3.0)
+		rod._colocar_aparejo_agua()
+		var d := agua.global_position - boya.global_position
+		_check(Vector2(d.x, d.z).length() > 0.16,
+			"flota al costado de la boya, no debajo de ella",
+			"%.2f m del centro" % Vector2(d.x, d.z).length())
+		_check(absf(d.y) < 0.12, "y a la altura del agua, donde se ve",
+			"%.2f m" % d.y)
+
+		boya.visible = false
+		_check(not agua.is_visible_in_tree(),
+			"recogida la boya, el anzuelo se recoge con ella")
+
+	# El cebo, donde esta de verdad: en los DOS anzuelos.
+	var bola := aparejo.find_child("Cebo", true, false) as MeshInstance3D
+	var bola_agua: MeshInstance3D = null
+	if agua != null:
+		bola_agua = agua.find_child("Cebo", true, false) as MeshInstance3D
+	_check(bola != null and bola_agua != null, "los dos aparejos traen su bola de cebo")
+	if bola != null and bola_agua != null:
+		_check(not bola.visible and not bola_agua.visible,
+			"a pelo, el anzuelo va desnudo")
+		var vivo := load("res://resources/cebos/cebo_vivo.tres") as TipoCebo
+		rod.cebar(vivo, FishingRod.CEBO_CARGAS_MAX)
+		var mat := bola.get_surface_override_material(0) as StandardMaterial3D
+		var mat_agua := bola_agua.get_surface_override_material(0) as StandardMaterial3D
+		_check(bola.visible and mat != null and mat.albedo_color.is_equal_approx(vivo.color),
+			"cebada, la bola se ve en la caña y lleva el color de SU cebo")
+		_check(bola_agua.visible and mat_agua != null
+			and mat_agua.albedo_color.is_equal_approx(vivo.color),
+			"y el anzuelo del agua lleva EL MISMO cebo: el feedback no se contradice")
+		rod.cebo_cargas = 1
+		rod._consumir_cebo()
+		_check(not bola.visible and not bola_agua.visible,
+			"y sin cargas desaparece de los dos: el anzuelo vuelve a estar desnudo")
+
+	rod.queue_free()
+	await get_tree().process_frame
+
+
+# =============================================================================
 #  El cebo (PESCA.md paso 3)
 # =============================================================================
 
@@ -659,6 +858,25 @@ func _test_wiring() -> void:
 	await get_tree().process_frame
 
 	var player := scene.get_node(^"Player") as Player
+	var rod_inicial := player.get_node_or_null(^"Camera3D/FishingRod") as FishingRod
+
+	# LA PARTIDA EMPIEZA CON LA CAÑA EN EL BARCO (24-ago-2026): clavada en un
+	# soporte de borda, no en la mano. Si esto deja de pasar, el jugador aparece
+	# con la caña puesta y el soporte pierde su papel de sitio DONDE ESTA.
+	_check(rod_inicial != null and rod_inicial.esta_clavada(),
+		"la partida arranca con la caña clavada en el barco, no en la mano")
+	if rod_inicial != null and rod_inicial.esta_clavada():
+		var pivote_clavado := rod_inicial.soporte.call(&"cuna") as Node3D
+		_check(pivote_clavado.get_child_count() > 0,
+			"y es la caña de verdad la que esta ahi, con todo lo suyo")
+		_check(player.arm == null or not player.arm.visible,
+			"con la caña en la borda, el brazo de primera persona se apaga")
+		# El resto del cableado se mira con la caña EN LA MANO, que es como se
+		# juega: se la coge del soporte igual que haria el jugador con E.
+		rod_inicial.retomar()
+		await get_tree().physics_frame
+		await get_tree().physics_frame
+
 	var model := player.get_node_or_null(^"Pescador")
 	_check(model != null, "el pescador esta montado en el jugador")
 	if model != null:
@@ -1027,4 +1245,120 @@ func _test_camera_drag() -> void:
 		"%.4f" % cam.position.length())
 
 	cam.queue_free()
+	await get_tree().process_frame
+
+
+## EL NIVEL DEL BALDE (PESCA.md §5). El cebo se dibuja con el modelo de
+## `tools/build_bait_bucket.py`: la masa (`BaitFill`) se escala y el copete
+## (`BaitMound`) solo se posa encima, y las dos cosas se calibran con dos
+## empties del propio GLB. Todo eso se rompe EN SILENCIO — un objeto renombrado
+## en Blender deja el balde lleno para siempre, sin un solo error en consola.
+##
+## Lo que se protege ademas del cableado: que el cebo no asome NUNCA por la
+## duela. Es el fallo que tenia el cubo viejo (un tapon escalado solo en Y
+## conservaba el radio de la boca y sacaba un anillo por la pared al bajar).
+func _test_bait_bucket_level() -> void:
+	var cubo: CuboCebo = load("res://game/props/cubo_cebo.tscn").instantiate()
+	add_child(cubo)
+	await get_tree().process_frame
+
+	var visual := cubo.get_node_or_null(^"Visual") as Node3D
+	_check(visual != null, "el cubo instancia el modelo del balde")
+	if visual == null:
+		cubo.queue_free()
+		await get_tree().process_frame
+		return
+	var relleno := visual.find_child("BaitFill", true, false) as MeshInstance3D
+	var monton := visual.find_child("BaitMound", true, false) as MeshInstance3D
+	var calibre_fondo := visual.find_child("BaitGaugeBase", true, false) as Node3D
+	var calibre_boca := visual.find_child("BaitGaugeRim", true, false) as Node3D
+	_check(relleno != null and monton != null,
+		"el GLB trae la masa y el copete como piezas separadas")
+	_check(calibre_fondo != null and calibre_boca != null,
+		"y el calibre del interior util (BaitGaugeBase/Rim)")
+	if relleno == null or monton == null or calibre_fondo == null or calibre_boca == null:
+		cubo.queue_free()
+		await get_tree().process_frame
+		return
+
+	_check(relleno.mesh != null
+		and (relleno.mesh.surface_get_format(0) & Mesh.ARRAY_FORMAT_COLOR) != 0,
+		"el cebo conserva el color por vertice del GLB",
+		"sin el, el tinte del TipoCebo pinta una masa plana")
+
+	var r_fondo: float = absf(calibre_fondo.position.x)
+	var r_boca: float = absf(calibre_boca.position.x)
+	var y_fondo: float = calibre_fondo.position.y
+	var y_boca: float = calibre_boca.position.y
+	_check(r_boca > r_fondo and y_boca > y_fondo,
+		"el balde se abre hacia la boca (calibre coherente)",
+		"r %.3f->%.3f · y %.3f->%.3f" % [r_fondo, r_boca, y_fondo, y_boca])
+
+	var alturas: Array[float] = []
+	for cargas in [24, 12, 6, 1]:
+		cubo.cargas = cargas
+		cubo._refrescar()
+		var fraccion: float = cubo.nivel()
+		# Radio interior de la duela a la altura de la superficie.
+		var superficie: float = lerpf(y_fondo, y_boca, fraccion)
+		var radio_pared: float = lerpf(r_fondo, r_boca, fraccion)
+		alturas.append(superficie)
+
+		var caja: AABB = relleno.get_aabb()
+		var alto_masa: float = relleno.position.y + caja.end.y * relleno.scale.y
+		_check(absf(alto_masa - superficie) < 0.004,
+			"con %d cargas la masa llega justo al nivel" % cargas,
+			"%.3f vs %.3f" % [alto_masa, superficie])
+		var radio_masa: float = maxf(caja.end.x, -caja.position.x) * relleno.scale.x
+		_check(radio_masa <= radio_pared + 0.002,
+			"y no asoma por la duela con %d cargas" % cargas,
+			"%.3f vs %.3f" % [radio_masa, radio_pared])
+
+		# El copete baja CON la superficie y se estrecha con ella: el balde es
+		# mas angosto abajo, asi que un monton de tamaño fijo la atravesaria.
+		_check(absf(monton.position.y - superficie) < 0.001,
+			"el copete se posa en la superficie con %d cargas" % cargas,
+			"%.3f vs %.3f" % [monton.position.y, superficie])
+		var caja_copete: AABB = monton.get_aabb()
+		var radio_copete: float = maxf(
+			maxf(caja_copete.end.x, -caja_copete.position.x),
+			maxf(caja_copete.end.z, -caja_copete.position.z)) * monton.scale.x
+		var fondo_copete: float = monton.position.y + caja_copete.position.y * monton.scale.y
+		var pared_abajo: float = lerpf(
+			r_fondo, r_boca, clampf((fondo_copete - y_fondo) / (y_boca - y_fondo), 0.0, 1.0))
+		_check(radio_copete <= pared_abajo,
+			"y el copete cabe en el balde con %d cargas" % cargas,
+			"%.3f vs %.3f" % [radio_copete, pared_abajo])
+
+	_check(alturas[0] > alturas[1] and alturas[1] > alturas[2] and alturas[2] >= alturas[3],
+		"el nivel BAJA segun se gasta el cebo",
+		", ".join(alturas.map(func(a: float) -> String: return "%.3f" % a)))
+	_check(alturas[3] > 0.0 and cubo.nivel() >= CuboCebo.NIVEL_MINIMO,
+		"y con una sola carga sigue quedando fondo visible",
+		"%.3f" % alturas[3])
+
+	# Tinte: el color del cebo llega al material sin repintar a los demas cubos.
+	var otro: CuboCebo = load("res://game/props/cubo_cebo.tscn").instantiate()
+	add_child(otro)
+	await get_tree().process_frame
+	otro.tipo = load("res://resources/cebos/cebo_vivo.tres") as TipoCebo
+	otro._refrescar()
+	var material_a := relleno.get_surface_override_material(0) as StandardMaterial3D
+	var otro_relleno := otro.get_node(^"Visual").find_child("BaitFill", true, false) as MeshInstance3D
+	var material_b := otro_relleno.get_surface_override_material(0) as StandardMaterial3D
+	_check(material_a != null and material_b != null and material_a != material_b,
+		"cada cubo tiñe su propio material duplicado")
+	_check(material_b != null and material_b.albedo_color.is_equal_approx(otro.tipo.color),
+		"el cebo vivo pinta el balde de su color")
+	_check(material_b != null and material_b.vertex_color_use_as_albedo,
+		"y el tinte MULTIPLICA el moteado en vez de taparlo")
+
+	# Vacio: no queda ni masa ni copete. Un balde vacio con algo dentro miente.
+	cubo.cargas = 0
+	cubo._refrescar()
+	_check(not relleno.visible and not monton.visible,
+		"el balde vacio no deja cebo dibujado")
+
+	cubo.queue_free()
+	otro.queue_free()
 	await get_tree().process_frame

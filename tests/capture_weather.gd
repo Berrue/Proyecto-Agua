@@ -165,6 +165,103 @@ func _ready() -> void:
 			Ocean.fury, Ocean.rain01, Ocean.furia_swell(Ocean.sim_time, 210.0)])
 	Ocean.limpiar_parte()
 
+	# --- A/B del destello ----------------------------------------------------
+	# El MISMO mar, mismo instante, mismo encuadre, con lightning01 a 0 y a 1.
+	# Las tomas `rayo_*` disparan un rayo de verdad y esperan 8 frames a que el
+	# bolt se revele entero, asi que fotografian el destello YA EN DECAIMIENTO:
+	# sirven para ver el rayo, no para medir cuanto sube el agua. Esto si.
+	Ocean.set_fury_immediate(7.0)
+	Ocean.rain_level = 0.6
+	if day_night != null:
+		day_night.set_debug_hour(10.0)
+	for _i in SHOT_FRAMES:
+		await get_tree().process_frame
+	var barco2 := find_child("FishingBoat", true, false) as Node3D
+	if barco2 != null:
+		cam.global_position = barco2.global_position + Vector3(10.0, 4.5, 12.0)
+		cam.look_at(barco2.global_position + Vector3(-4.0, 1.0, -6.0), Vector3.UP)
+	# EL DIRECTOR TIENE QUE CALLARSE: su `_process` escribe `lightning01` CADA
+	# frame (0.0 cuando no hay rayo), asi que pisaba el valor de esta prueba
+	# antes de que se dibujara nada. Dos medidas seguidas dieron "+0.0 %" por
+	# esto y estuvieron a punto de mandar a arreglar un shader que no fallaba.
+	var ld2 := toybox.get_node_or_null(^"LightningDirector") as LightningDirector
+	if ld2 != null:
+		ld2.process_mode = Node.PROCESS_MODE_DISABLED
+	for ab: Array in [["flash_off", 0.0], ["flash_on", 1.0]]:
+		RenderingServer.global_shader_parameter_set(&"lightning01", float(ab[1]))
+		await get_tree().process_frame
+		await RenderingServer.frame_post_draw
+		var im2 := get_viewport().get_texture().get_image()
+		var e2 := im2.save_png("%s/%s.png" % [_dir, ab[0]])
+		print("%s  %s  lightning01 = %.1f" % ["OK  " if e2 == OK else "FALLO", ab[0], ab[1]])
+	RenderingServer.global_shader_parameter_set(&"lightning01", 0.0)
+	if ld2 != null:
+		ld2.process_mode = Node.PROCESS_MODE_INHERIT
+
+	# --- A/B de la TANDA 2 ---------------------------------------------------
+	# Cat's paws y estrias entran apagadas (son gusto, no fisica). Esto saca el
+	# mismo mar con y sin ellas, cada una a la furia donde de verdad se lee:
+	# las manchas con mar chico, las estrias en temporal.
+	var mat_mar: ShaderMaterial = null
+	var sup := find_child("OceanSurface", true, false)
+	if sup != null and sup is GeometryInstance3D:
+		mat_mar = (sup as GeometryInstance3D).material_override as ShaderMaterial
+		if mat_mar == null and sup is MeshInstance3D:
+			mat_mar = (sup as MeshInstance3D).mesh.surface_get_material(0) as ShaderMaterial
+	if mat_mar != null:
+		# A/B DE VERDAD: camara FIJA en mundo y mar CONGELADO.
+		#
+		# El primer intento referia la camara al barco y dejaba correr el
+		# tiempo: el barco derivaba y rotaba entre las dos tomas, asi que las
+		# imagenes no eran el mismo encuadre ni el mismo mar y la comparacion no
+		# valia nada. Peor: las manchas turquesa que parecian ser la feature
+		# resultaron ser las CRESTAS de siempre, visibles en las dos.
+		#
+		# Con el oceano en pausa las dos fotos son el mismo instante exacto, asi
+		# que cualquier diferencia entre ellas es, necesariamente, el uniform.
+		for grupo: Array in [
+			# nombre, furia, uniform, buscar_racha, camara, objetivo
+			["paws", 2.0, &"paw_amount", true,
+				Vector3(0.0, 7.0, 0.0), Vector3(-25.0, 0.0, -45.0)],
+			["estrias", 8.0, &"streak_amount", false,
+				Vector3(0.0, 12.0, 0.0), Vector3(-25.0, 0.0, -45.0)],
+		]:
+			Ocean.rain_level = 0.0
+			Ocean.set_fury_immediate(float(grupo[1]))
+			if bool(grupo[3]):
+				_seek_gust()
+			for _i in SHOT_FRAMES:
+				await get_tree().process_frame
+			# Congelado: a partir de aqui el mar no se mueve ni un milimetro.
+			Ocean.set_paused(true)
+			cam.global_position = grupo[4]
+			cam.look_at(grupo[5], Vector3.UP)
+			# TRES niveles, no dos. Con solo off/on la decision se toma contra
+			# el maximo, y el maximo de las estrias son autopistas blancas: se
+			# rechazaria un efecto que a 0.35 puede estar bien.
+			# 0.15 es el valor QUE SE ENVIA en las estrias, asi que la toma
+			# "suave" es tambien la regresion del ajuste real.
+			for ab: Array in [["off", 0.0], ["suave", 0.15], ["fuerte", 1.0]]:
+				mat_mar.set_shader_parameter(grupo[2], float(ab[1]))
+				await get_tree().process_frame
+				await RenderingServer.frame_post_draw
+				var im3 := get_viewport().get_texture().get_image()
+				var nombre3: String = "%s_%s" % [grupo[0], ab[0]]
+				var e3 := im3.save_png("%s/%s.png" % [_dir, nombre3])
+				print("%s  %s  furia %.1f  %s = %.1f  racha %.2f" % [
+					"OK  " if e3 == OK else "FALLO", nombre3, Ocean.fury,
+					grupo[2], float(ab[1]), Ocean.gust01()])
+			mat_mar.set_shader_parameter(grupo[2], 0.0)
+			Ocean.set_paused(false)
+		# El material es un recurso COMPARTIDO: dejarlo encendido contaminaria
+		# cualquier captura posterior.
+		mat_mar.set_shader_parameter(&"paw_amount", 0.0)
+		mat_mar.set_shader_parameter(&"streak_amount", 0.0)
+	else:
+		print("FALLO  no encuentro el material del oceano para el A/B de tanda 2")
+
+	Ocean.rain_level = 0.0
+
 	print("capturas en: ", ProjectSettings.globalize_path(_dir))
 	get_tree().quit(0)
 

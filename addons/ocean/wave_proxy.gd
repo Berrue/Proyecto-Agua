@@ -281,7 +281,21 @@ func normal_at(world_xz: Vector2, t: float) -> Vector3:
 ## Jacobiano del desplazamiento horizontal. J < 0 = la cresta rompe aqui.
 ## Es el mismo numero que pinta la espuma en el shader: lo que ves es lo que duele.
 func jacobian_at(world_xz: Vector2, t: float) -> float:
-	var p := _solve_rest_position(world_xz, t)
+	return jacobian_en_reposo(_solve_rest_position(world_xz, t), t)
+
+
+## El jacobiano en una posicion DE REPOSO, sin invertir nada.
+##
+## Es la mitad que de verdad espeja al shader: `ocean_jacobian()` recibe la
+## posicion de reposo directamente, porque en el vertex shader la malla YA esta
+## en reposo. `jacobian_at()` existe aparte porque quien pregunta desde el juego
+## tiene una posicion de MUNDO (donde esta el barco) y hay que invertir antes.
+##
+## Estaban fundidas en una sola funcion, y eso hacia imposible compararse con la
+## GPU: al darles el mismo punto a las dos, una lo trataba como reposo y la otra
+## lo invertia, y el test de paridad acusaba una divergencia de 0.22 que no
+## existia. Separarlas es lo que deja al golden comparar lo mismo con lo mismo.
+func jacobian_en_reposo(p: Vector2, t: float) -> float:
 	var dxdx: float = 0.0
 	var dzdz: float = 0.0
 	var dxdz: float = 0.0

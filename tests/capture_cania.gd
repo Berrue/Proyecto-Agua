@@ -36,6 +36,12 @@ func _ready() -> void:
 	Ocean.set_fury_immediate(0.5)
 	for _i in 120:
 		await get_tree().process_frame
+
+	# La partida arranca con la caña clavada en el barco y para estas láminas
+	# hace falta en la mano, que es donde se juzga el doblez. Va DESPUÉS de la
+	# espera a propósito: clavarla es diferido (`_clavar_al_arrancar`), así que
+	# retomarla en el mismo frame en que nace el mundo no retomaría nada.
+	rod.retomar()
 	if hud != null:
 		hud.visible = false
 
@@ -45,6 +51,11 @@ func _ready() -> void:
 	for nivel: float in NIVELES:
 		rod._bend = nivel
 		rod._aplicar_doblez(nivel)
+		# El aparejo cuelga de la punta con un muelle, asi que con el proceso
+		# apagado se quedaria donde estaba y el sedal saldria estirado: se le
+		# dejan los pasos que tarda el pendulo en asentarse en la punta NUEVA.
+		for _p in 90:
+			rod._mover_aparejo(1.0 / 60.0)
 		rod._draw_line()
 		for _i in 3:
 			await get_tree().process_frame

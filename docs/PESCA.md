@@ -246,8 +246,143 @@ con lo que queda y se tiñe del color del cebo, el prompt al mirarlo dice qué
 hay, cuánto queda y qué hace, y la línea CAÑA del HUD de debug lleva el cebo
 puesto y sus cargas. Nadie abre un menú para saber si hay cebo a bordo.
 
+**La forma del balde** (24-ago-2026). El cubo dejó de ser tres primitivas: es
+un asset propio, `tools/build_bait_bucket.py` →
+`game/props/models/bait_bucket.glb`, balde de duelas de roble con aros, orejas
+y asa forjada — la madera y el hierro del resto del barco, no el único plástico
+a bordo. Tres decisiones que no son estéticas:
+
+- **El cebo va en dos piezas.** `BaitFill` es la masa (Godot la escala) y
+  `BaitMound` el copete de pellas, sardinas y gusanos (Godot solo lo posa en la
+  superficie). Un sólido único estirado en Y se leía como un bote de pintura, y
+  un montón aplastado se lee como una malla, no como cebo.
+- **El nivel sale del propio modelo.** Dos empties, `BaitGaugeBase` y
+  `BaitGaugeRim`, llevan el calibre `(radio, altura)` del interior útil, y de
+  ahí sale que la masa se estreche igual que la duela: toca la madera al ras a
+  cualquier nivel y nunca asoma por fuera. El cubo viejo sí lo hacía — al bajar
+  el nivel conservaba el radio de la boca y sacaba un anillo por la pared.
+- **El asa va volcada hacia fuera.** Un arco sobre la boca cruza justo por
+  delante de lo único que el jugador viene a mirar, y al bajar el nivel se
+  hunde en el montón.
+
+El tinte del `TipoCebo` **multiplica** el color por vértice del GLB (sardinas
+oscuras sobre masa clara) en vez de taparlo: la masilla parda y el cebo vivo
+rojizo salen del mismo modelo sin perder el moteado.
+`tests/capture_cubo_cebo.tscn` (con ventana, no headless) saca las fotos a los
+cuatro niveles y con los dos cebos; los invariantes —cableado del GLB, nivel
+que baja, cebo que no atraviesa la duela— viven en `tests/fishing_tests.tscn`.
+
 **Pendiente:** comprarlo en puerto (necesita la lonja) y su sonido al cebar
 (política ElevenLabs, regla 10). Hoy el cubo arranca con 24 cargas de masilla.
+
+## 6 · El sedal enhebrado y el aparejo
+
+La caña tenía carrete, anillas y puntera, pero **el hilo solo existía después de
+lanzar**: en la mano —la pose que el jugador mira el 90 % del tiempo— era un palo
+naranja con un carrete de adorno. Ahora el sedal sale de la bobina, sube por las
+seis anillas, pasa la puntera y de ahí cuelga el aparejo: anzuelo, y el cebo
+clavado en él si lo llevas puesto.
+
+**Lo que decide cada pieza:**
+
+- **El hilo se dibuja en el espacio de la caña, no del mundo.** El tramo que va a
+  la boya es `top_level` (vive en el mar, y así se queda cuando guardas la caña),
+  pero el enhebrado cuelga de `RodPivot` con los vértices ya en coordenadas de la
+  caña. La razón es de frame, no de estilo: dibujado en mundo se despegaría de
+  las anillas cada vez que la cámara gira rápido, porque el sedal se calcula en
+  el tick de física y la caña se ve en el de render.
+- **Pasa por las anillas de verdad, incluso doblada.** `FishingRod._piel()`
+  reproduce el MISMO skinning que hace la GPU (mezcla lineal con los pesos de
+  sombrero que reparte `tools/build_fishing_rod.py`), así que el hilo sigue el
+  arco del cuerpo hasta el doblez máximo. Y `FishingRod.ENHEBRADO` —por dónde
+  pasa— se comprueba en `fishing_tests` **contra la malla del GLB**: cada punto
+  tiene que caer dentro de su aro, con hierro a los dos lados. Es la costura
+  entre dos archivos que podrían separarse sin que reventara nada (el sedal
+  simplemente se dibujaría por fuera, y solo se vería mirando una captura).
+- **El aparejo es un péndulo colgado de la puntera**, con la constante del
+  muelle en `g / largo`: el periodo real de un péndulo de 30 cm. Al andar, al
+  girar y al cargar el lanzamiento el anzuelo se queda atrás y vuelve. Sale
+  gratis porque el péndulo vive en el espacio del pivote: es el OBJETIVO el que
+  se mueve dentro de ese espacio, no el anzuelo el que persigue por el mundo.
+- **El anzuelo es un 8/0 de mar** (7 cm, alambre de 2,6 mm) y no un anzuelo de
+  playa. No es exageración de escala: la primera versión fue un 2,6 cm correcto
+  de manual y en primera persona era **literalmente invisible** —a dos metros de
+  la cámara ese alambre mide 0,4 px, y el anzuelo entero pintaba UN pixel medido
+  con `capture_fishing`—. Un 8/0 es el aparejo que se le pone a un atún o a una
+  aguja azul, que es exactamente lo que pesca este barco.
+- **Se planta de perfil, y con la curva por fuera.** Colgando en la vertical de
+  la puntera, el aparejo cae justo sobre la silueta de la caña: de canto son dos
+  píxeles de alambre, y con la curva hacia dentro el cuerpo se come lo único que
+  hace reconocible un anzuelo (medido: sobrevivían 6 píxeles de 24). El mismo
+  criterio que rodó el modelo 50° para que el carrete asomara por el brazo. No
+  hay física que traicionar: un anzuelo colgado de un hilo gira libre.
+- **Es el MISMO anzuelo en la mano y en el mar.** Echado el sedal, el aparejo no
+  desaparece: se va con la boya, y el sedal la ATRAVIESA en vez de morir en ella
+  —la boya es el flotador por el que pasa el hilo; el anzuelo es lo que pesca—.
+  Cuelga del nodo de la boya para heredarle la visibilidad (aparece al lanzar,
+  se va al recoger, se queda a la deriva con ella tras una rotura) aunque su
+  sitio lo escriba el código cada frame.
+  **Dónde va, y por qué ahí:** un flotador de verdad lleva el anzuelo un metro
+  por debajo, donde no lo ve nadie — y aquí menos, que la boya son 32 cm de bola
+  que lo tapa desde arriba (medido: no pintaba un píxel). Así que flota **al
+  costado**, a ras de agua y por el lado que mira quien pesca. Al costado y no
+  «hacia la cámara»: apartarlo en profundidad no separa nada en pantalla, la
+  bola se le pone delante igual. Es una concesión deliberada a la lectura sobre
+  la física — la boya sigue siendo la señal de la picada, y el aparejo es la
+  prueba de que no hay dos aparejos distintos según dónde mires.
+- **El cebo se ve DONDE ESTÁ**, y en los dos anzuelos. La bola del GLB se
+  enciende y se tinta con el color del `TipoCebo` montado, y desaparece al
+  gastar la última carga. Hasta ahora si llevabas cebo lo sabía el HUD de debug,
+  o sea que en una partida de verdad no lo sabía nadie. En la mano se lee
+  claramente: la bola es lo más gordo del aparejo (`capture_fishing`, lámina
+  `1b_pov_cebada`).
+- **La rotura se lleva el aparejo.** Durante los 6 s del trozo de sedal colgando
+  no hay anzuelo: perder el pez cuesta también el aparejo, y verlo volver es la
+  señal de que has montado otro.
+
+Fuente editable en `source_assets/fishing/anzuelo.blend`, generador reproducible
+en `tools/build_anzuelo.py`, y `tests/capture_cania.tscn` enseña el hilo
+siguiendo el arco en los cinco niveles de doblez.
+
+### La caña vive en el barco, no en la mano
+
+La partida **empieza con la caña clavada en un soporte de borda** (`FishingRod.
+empezar_clavada`, que enciende `player.tscn`): hay que acercarse y cogerla con
+`E`. Es una decisión de tono — la caña es un aparejo del pesquero, no una
+extremidad del personaje — y de paso deja ver la caña entera antes de mirarla en
+escorzo desde la mano.
+
+Lo que la hizo posible sin duplicar nada: **clavarla ya no esconde la caña y
+enciende otra**. Antes había dos —el viewmodel guardado y un palo gris de
+primitivas en la borda— y las dos contaban cosas distintas: la gris no tenía
+sedal, ni aparejo, ni el color del tier, y su doblez viajaba a mano
+(`set_doblado`) en vez de salir del muelle. Ahora `FishingRod` **muda su
+`RodPivot`** a la `Cuna` del soporte y se lleva todo consigo: modelo, hilo
+enhebrado, anzuelo con su cebo, el carrete que gira y los altavoces del freno.
+Hay UNA caña. Lo único que se apaga al clavarla es el brazo de primera persona
+—un brazo saliendo del soporte sería un fantasma—, y `_tip_pos()` deja de
+preguntarle al soporte por su punta: solo hay una punta posible.
+
+Al hilo de eso salieron dos cosas que había que atar, y las dos las cazó el
+arnés, no el ojo:
+
+- **El brazo pasó a tener un solo dueño.** `Player.mostrar_brazo()` lo combina
+  con el toggle de tercera persona (`set_body_visible`): los dos escribían
+  `arm.visible` por su cuenta y ganaba el último que pasara por el frame — en
+  las capturas de tercera persona reaparecía un brazo suelto.
+- **La caña vive en un nodo que no es suyo, y ese nodo puede morir antes.** Si
+  el soporte (o el barco entero) se va del árbol, `tree_exiting` avisa a tiempo
+  y la caña se recupera sola a la mano; si es la caña la que se va estando
+  clavada —un tripulante que se desconecta—, `_exit_tree` libera el soporte y
+  se lleva el pivote, que si no queda un fantasma vivo colgado del barco y un
+  soporte ocupado que nadie puede liberar. Sin esto, `net_tests` escupía 17
+  errores por corrida escribiéndole `visible` a un puntero muerto.
+
+**Pendiente:** la caña de los compañeros no se replica (deuda declarada de R1),
+y `ocupado` tampoco viaja por la red: cada máquina clava la suya en el primer
+soporte libre **de su mundo**, así que dos tripulantes pueden creerse dueños del
+mismo soporte sin que ninguno lo note (no se ve la caña del otro). Cuando R2
+replique la pesca, el arbitraje del soporte va por el patrón del porteo.
 
 ## Historial
 
@@ -301,3 +436,31 @@ puesto y sus cargas. Nadie abre un menú para saber si hay cebo a bordo.
   Si el modelo llegara sin rig, la caña vuelve sola al doblez rígido de antes.
   Se mira con `tests/capture_cania.tscn` (cinco niveles clavados a mano, porque
   en partida el máximo no dura lo bastante para juzgarlo).
+- 2026-08-24 — **el balde con cebo, hecho pieza** (§5). El cubo pasa de tres
+  primitivas a un asset propio (`tools/build_bait_bucket.py`): duelas de roble,
+  aros y asa forjada volcada, y el cebo en dos mallas — masa y copete de
+  sardinas y gusanos — para que el nivel siga contando sin parecer pintura. El
+  calibre del interior viaja en el GLB (`BaitGauge*`), así que la masa se
+  estrecha con la duela y deja de asomar por la pared al bajar el nivel; el
+  color del `TipoCebo` multiplica el moteado en vez de aplanarlo. 25
+  comprobaciones nuevas en `fishing_tests` y `tests/capture_cubo_cebo.tscn`
+  para revisar los cuatro niveles con los dos cebos.
+- 2026-08-24 — **el hilo y el anzuelo** (§6). El sedal se enhebra de la bobina a
+  la puntera pasando por las seis anillas —con el mismo skinning que la GPU, así
+  que aguanta el doblez—, y de la punta cuelga el aparejo: un 8/0 de mar
+  (`tools/build_anzuelo.py`) en péndulo, de perfil y con la curva por fuera,
+  llevando el cebo puesto a la vista. El tamaño y la orientación se decidieron
+  MIDIENDO capturas: el anzuelo correcto de manual pintaba un pixel. 26
+  comprobaciones nuevas en `fishing_tests`, una de ellas contra la malla del GLB
+  para que la tabla del enhebrado y las anillas no se separen en silencio.
+- 2026-08-24 (2ª tanda) — **el aparejo en el mar y la caña en el barco** (§6).
+  Echado el sedal, el anzuelo ya no desaparece: es el MISMO, con su cebo, y
+  flota al costado de la boya donde se lee (colgado debajo lo tapaba la propia
+  bola de 32 cm — medido, no pintaba un píxel). Y la partida empieza con la
+  caña **clavada en el soporte de borda**: `FishingRod` muda su `RodPivot` al
+  soporte en vez de esconderse y encender un palo gris, así que la caña de la
+  borda es la de verdad —hilo, aparejo, tier y carrete incluidos— y hay una
+  sola punta. De paso, un dueño único para el brazo del viewmodel y el barrido
+  de la caña cuando el soporte muere antes que ella (17 errores por corrida en
+  `net_tests` que nadie miraba).
+

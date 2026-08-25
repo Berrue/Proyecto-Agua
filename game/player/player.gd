@@ -72,6 +72,10 @@ var hands_busy: bool:
 ## el peso: la sardina no se nota, el atun te convierte en procesion.
 var carry_slowdown: float = 1.0
 
+## Los dos interruptores del brazo del viewmodel (ver `mostrar_brazo`).
+var _tercera_persona: bool = false
+var _brazo_en_mano: bool = true
+
 ## El brazo del viewmodel. Publico porque las capturas de tercera persona (y
 ## manana la vista de los demas jugadores) tienen que apagarlo.
 var arm: MeshInstance3D = null
@@ -206,8 +210,23 @@ func set_body_visible(body_visible: bool) -> void:
 	)
 	for mesh: MeshInstance3D in _body_meshes(model):
 		mesh.cast_shadow = mode
+	_tercera_persona = body_visible
+	_refrescar_brazo()
+
+
+## El brazo del viewmodel tiene DOS dueños y ninguno puede pisar al otro: la
+## tercera persona lo apaga (ahi se ve el cuerpo entero, un brazo suelto seria
+## un doble) y la caña lo apaga cuando no la llevas en la mano (clavada en la
+## borda, el brazo saldria del soporte). Antes cada uno escribia `arm.visible`
+## por su cuenta y ganaba el ultimo que pasara por el frame.
+func mostrar_brazo(quiere: bool) -> void:
+	_brazo_en_mano = quiere
+	_refrescar_brazo()
+
+
+func _refrescar_brazo() -> void:
 	if arm != null:
-		arm.visible = not body_visible
+		arm.visible = _brazo_en_mano and not _tercera_persona
 
 
 func _unhandled_input(event: InputEvent) -> void:

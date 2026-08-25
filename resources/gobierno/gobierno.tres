@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="GobiernoBalance" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://game/boat/gobierno_balance.gd" id="1_gobierno"]
+
+[resource]
+script = ExtResource("1_gobierno")
+area_plano_deriva = 9.0
+pos_plano_deriva = Vector3(0, -0.7, 1.25)
+area_pala = 1.1
+pos_pala = Vector3(0, -1, 6)
+pala_max_deg = 35.0
+factor_orbital = 0.7
+vuelta_completa_s = 5.0
+pala_rate_deg = 10.0
+zona_muerta = 0.12
+trinca_s = 12.0
+trinca_s_temporal = 6.0
+trinca_hs_temporal = 6.0

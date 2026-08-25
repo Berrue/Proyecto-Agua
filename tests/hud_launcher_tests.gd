@@ -16,9 +16,39 @@ var _checks: int = 0
 
 func _ready() -> void:
 	print_rich("[b]--- Pruebas del lanzador del HUD ---[/b]")
+	_test_tecla_ene()
 	await _test_scene("res://game/world/toybox.tscn", false)
 	await _test_scene("res://game/world/tsunami.tscn", true)
 	_report()
+
+
+## Las tres vias por las que puede llegar la Ñ. Se prueban sueltas porque el
+## fallo que esconden es MUDO: en un teclado que no es el del que programo esto,
+## la tecla simplemente no abre nada y no hay ni un error que mirar.
+func _test_tecla_ene() -> void:
+	var escribe := InputEventKey.new()
+	escribe.unicode = 241 # ñ
+	_check(OceanDebugHUD.es_tecla_menu(escribe), "la ñ que se escribe abre el menu")
+
+	var mayus := InputEventKey.new()
+	mayus.unicode = 209 # Ñ, con bloq. mayus o con shift
+	_check(OceanDebugHUD.es_tecla_menu(mayus), "y la Ñ mayuscula tambien")
+
+	var etiqueta := InputEventKey.new()
+	etiqueta.key_label = 241 as Key
+	_check(OceanDebugHUD.es_tecla_menu(etiqueta), "y la etiqueta localizada de la tecla")
+
+	# Quien no tiene Ñ en el teclado: la POSICION de la Ñ española es la del
+	# `;` en un QWERTY US. Sin esto se quedaria sin menu de debug.
+	var fisica := InputEventKey.new()
+	fisica.physical_keycode = KEY_SEMICOLON
+	_check(OceanDebugHUD.es_tecla_menu(fisica), "y su posicion fisica en un QWERTY US")
+
+	# Y no se abre con cualquier cosa: las teclas del propio HUD no son la puerta.
+	var otra := InputEventKey.new()
+	otra.keycode = KEY_3
+	otra.unicode = 51 # '3'
+	_check(not OceanDebugHUD.es_tecla_menu(otra), "y una tecla cualquiera no la abre")
 
 
 func _check(condition: bool, label: String, detail: String = "") -> void:
@@ -42,6 +72,24 @@ func _report() -> void:
 		get_tree().quit(1)
 
 
+## Una tecla por el camino REAL (`Input.parse_input_event`): es lo unico que
+## comprueba que el evento llega al HUD y no se lo come otro nodo antes.
+func _pulsar(keycode: Key) -> void:
+	var key := InputEventKey.new()
+	key.keycode = keycode
+	key.pressed = true
+	Input.parse_input_event(key)
+
+
+## La Ñ no tiene constante en `Key`, asi que se manda como la manda un teclado
+## español: por el caracter que ESCRIBE.
+func _pulsar_ene() -> void:
+	var key := InputEventKey.new()
+	key.unicode = 241
+	key.pressed = true
+	Input.parse_input_event(key)
+
+
 func _find_hud(root: Node) -> OceanDebugHUD:
 	for child in root.get_children():
 		if child is OceanDebugHUD:
@@ -63,6 +111,20 @@ func _test_scene(path: String, has_director: bool) -> void:
 	if hud == null:
 		scene.queue_free()
 		return
+
+	# 0) LA PUERTA. El menu nace cerrado y sus atajos no existen hasta abrirlo:
+	#    si la Ñ fuera solo un interruptor de visibilidad, `3` seguiria lanzando
+	#    un tsunami con el panel apagado y cerrarlo no serviria de nada.
+	_check(not hud.visible, "%s: el menu de debug nace cerrado" % label)
+	_pulsar(KEY_3)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	_check(not Ocean.has_tsunami(),
+		"%s: cerrado, la tecla 3 no lanza nada" % label)
+
+	_pulsar_ene()
+	await get_tree().process_frame
+	_check(hud.visible, "%s: la Ñ abre el menu" % label)
 
 	# 1) Los exports estan asignados EN LA ESCENA. Es el fallo mas probable:
 	#    funciona en una escena y en la otra el array esta vacio.
@@ -121,6 +183,11 @@ func _test_scene(path: String, has_director: bool) -> void:
 			and Ocean.current_tier.tier_name == "LEVIATAN",
 		"%s: la tecla 3 lanza el tier 3" % label,
 		"salio %s" % (Ocean.current_tier.tier_name if Ocean.current_tier else "nada"))
+
+	# 7) Y la Ñ vuelve a cerrarlo.
+	_pulsar_ene()
+	await get_tree().process_frame
+	_check(not hud.visible, "%s: la Ñ vuelve a cerrar el menu" % label)
 
 	Ocean.clear_events()
 	scene.queue_free()

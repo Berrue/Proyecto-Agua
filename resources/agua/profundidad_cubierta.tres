@@ -1,0 +1,15 @@
+[gd_resource type="Curve" format=3]
+
+; Nivel de agua (0..1) -> profundidad sobre la cubierta, en metros.
+; Es la calibracion que hace legible toda la mecanica sin un solo HUD:
+;   0,05 -> 2 cm : un charco que te moja los pies. "esta entrando agua"
+;   0,55 -> 45 cm: por la rodilla. Es el nivel de la ALARMA.
+;   0,85 -> 1 m  : por la cintura. Es el NAUFRAGIO.
+; Si se mueven los umbrales del balance, hay que mover estos puntos con ellos:
+; el sentido de esto es que el nivel del agua y el momento de alarmarse sean la
+; MISMA cosa a los ojos del jugador.
+
+[resource]
+max_value = 1.25
+_data = [Vector2(0, 0), 0.0, 0.4, 0, 0, Vector2(0.05, 0.02), 0.4, 0.8, 0, 0, Vector2(0.55, 0.45), 0.8, 1.2, 0, 0, Vector2(0.85, 1), 1.2, 1.3, 0, 0, Vector2(1, 1.2), 1.3, 0.0, 0, 0]
+point_count = 5

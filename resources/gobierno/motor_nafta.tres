@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="MotorNaftaBalance" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://game/boat/motor_nafta_balance.gd" id="1_motor"]
+
+[resource]
+script = ExtResource("1_motor")
+empuje_max = 60000.0
+rampa_s = 2.5
+estela_ms = 4.5
+pos_helice = Vector3(0, -1, 5.4)
+tanque_l = 45.0
+consumos_l_min = PackedFloat32Array(3, 1.2, 0.1, 0.6, 1.2, 3)
+umbral_tos_l = 6.0
+bidon_l = 25.0
+ritmo_repostaje_l_s = 5.0

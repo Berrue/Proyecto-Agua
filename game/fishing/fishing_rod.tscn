@@ -1,8 +1,9 @@
-[gd_scene load_steps=6 format=3]
+[gd_scene load_steps=7 format=3]
 
 [ext_resource type="Script" path="res://game/fishing/fishing_rod.gd" id="1_rod"]
 [ext_resource type="PackedScene" path="res://game/fishing/fish.tscn" id="2_fish"]
 [ext_resource type="PackedScene" uid="uid://c6fo8o0lpgopu" path="res://game/fishing/models/cania.glb" id="3_cania"]
+[ext_resource type="PackedScene" uid="uid://bnhq5h4c6qtn" path="res://game/fishing/models/anzuelo.glb" id="4_anzuelo"]
 
 [sub_resource type="SphereMesh" id="SphereMesh_bobber"]
 radius = 0.16
@@ -25,9 +26,17 @@ fish_scene = ExtResource("2_fish")
 [node name="Tip" type="Node3D" parent="RodPivot"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.54, 0)
 
+[node name="Enhebrado" type="MeshInstance3D" parent="RodPivot"]
+
+[node name="Aparejo" parent="RodPivot" instance=ExtResource("4_anzuelo")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.24, 0)
+
 [node name="Bobber" type="MeshInstance3D" parent="."]
 visible = false
 mesh = SubResource("SphereMesh_bobber")
 surface_material_override/0 = SubResource("Mat_bobber")
+
+[node name="Aparejo" parent="Bobber" instance=ExtResource("4_anzuelo")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.28, 0)
 
 [node name="Line" type="MeshInstance3D" parent="."]

@@ -37,6 +37,7 @@ script = ExtResource("4_camfx")
 
 [node name="FishingRod" parent="Camera3D" unique_id=1784588838 instance=ExtResource("3_rod")]
 player_path = NodePath("../..")
+empezar_clavada = true
 tier = ExtResource("5_rodtier")
 
 [node name="Portador" type="Node3D" parent="Camera3D"]

@@ -78,6 +78,15 @@ const REFRESCO_COM_TICKS := 240
 ## bidones y restos, que nadie mira de cerca.
 @export_range(1, 8) var tick_divisor: int = 1
 
+@export_group("Agua embarcada")
+
+## Cuanto INCLINA el agua de dentro. 0 = el barco se hunde recto, que es el
+## default y la decision de diseño: el agua castiga hundiendo, no tumbando, y
+## quien avisa de que hay agua es VERLA en cubierta. 1 = cada celda pierde su
+## propio empuje y el casco se tumba hacia el costado mojado, como antes.
+## El porque completo esta en `_empuje_efectivo`.
+@export_range(0.0, 1.0, 0.05) var sesgo_escora: float = 0.0
+
 @export_group("Adrizamiento")
 
 ## Brazo adrizante de la superestructura estanca, en METROS: el GZ que usaria un
@@ -187,6 +196,9 @@ func _physics_process(delta: float) -> void:
 	var total_torque := Vector3.ZERO
 	# REGLA 5: los brazos se miden desde el CENTRO DE MASAS. Ver `_centro_de_masas`.
 	var com := _centro_de_masas()
+	# El agua a bordo le quita empuje a TODAS las celdas por igual: se lee UNA vez
+	# por tick y no por celda. Ver `_empuje_efectivo` para el porque.
+	var inundacion_media := flooding_level()
 
 	for i in probes.size():
 		var probe: BuoyancyProbe3D = probes[i]
@@ -215,7 +227,8 @@ func _physics_process(delta: float) -> void:
 
 		# Empuje de Arquimedes. REGLA 1: sin multiplicar por delta.
 		var buoyant := Vector3.UP * (
-			WATER_DENSITY * _gravity * submerged_volume * probe.effective_buoyancy())
+			WATER_DENSITY * _gravity * submerged_volume
+			* _empuje_efectivo(probe, inundacion_media))
 		total_force += buoyant
 		total_torque += offset.cross(buoyant)
 
@@ -385,6 +398,28 @@ func _check_slam(index: int, probe: BuoyancyProbe3D, depth: float, probe_pos: Ve
 	slammed.emit(strength, probe_pos)
 
 
+## Cuanto empuje le queda a una celda, 0..1.
+##
+## [b]El agua embarcada NO inclina el barco[/b] (decision de diseño, 24-ago-2026):
+## la inundacion que entra en la fuerza es la MEDIA del casco, no la de esta
+## celda. Antes cada celda perdia su propio empuje y el barco se tumbaba hacia el
+## lado mojado. Se quito por dos motivos, y el segundo pesa mas que el primero:
+## estorbaba al feel, y era ILEGIBLE — la escora era el UNICO aviso de donde
+## estaba el agua, asi que si no se lee, el sistema entero queda mudo. El castigo
+## pasa a ser hundirse RECTO y el aviso pasa a ser VER el agua en cubierta.
+##
+## De paso la matematica en frio deja de ser aproximada: el punto sin retorno
+## (0,689) y los umbrales se calcularon suponiendo agua pareja, que es justo lo
+## que hay ahora.
+##
+## `sesgo_escora` recupera aquel comportamiento por si algun dia se quiere un
+## resto sutil; en 0 —el default— el agua no inclina nunca.
+func _empuje_efectivo(probe: BuoyancyProbe3D, media: float) -> float:
+	var inundacion: float = lerpf(media, probe.flooding,
+		clampf(sesgo_escora, 0.0, 1.0))
+	return 1.0 - clampf(inundacion, 0.0, 1.0)
+
+
 func _update_flooding(probe: BuoyancyProbe3D, step: float) -> void:
 	if not probe.floodable or probe.flood_rate <= 0.0:
 		return
@@ -419,11 +454,50 @@ func olvidar_historial_agua() -> void:
 	constant_torque = Vector3.ZERO
 
 
-## Anota una sonda como anegada. La escora sale sola de la fisica.
+## Mete agua en el barco por una celda. Lo que no cabe en ella REBOSA a las
+## demas, porque el agua de una cubierta encuentra su nivel.
+##
+## Rebosar no es un adorno, es un bug que costo un 41 % del agua de la tormenta.
+## La mar gruesa entra siempre por el MISMO costado (el de barlovento), asi que
+## esas celdas llegaban a 1.0 y a partir de ahi el `clampf` TIRABA el resto sin
+## decir nada: a furia 8 entraban 0,0116/s en vez de los 0,0198/s que promete el
+## balance, y el barco tardaba un 40 % mas en hundirse. Antes se disimulaba
+## porque el casco se tumbaba hacia el lado mojado y eso hundia otras celdas;
+## desde que el agua no inclina (ver `_empuje_efectivo`), el agujero quedo a la
+## vista.
 func flood_probe(index: int, amount: float) -> void:
-	if index < 0 or index >= probes.size():
+	if index < 0 or index >= probes.size() or probes.is_empty():
 		return
-	probes[index].flooding = clampf(probes[index].flooding + amount, 0.0, 1.0)
+	if amount <= 0.0:
+		probes[index].flooding = clampf(probes[index].flooding + amount, 0.0, 1.0)
+		return
+	var sobra: float = _verter_en(index, amount)
+	if sobra <= 0.0:
+		return
+	# Lo que no cupo se reparte entre las demas, y lo que tampoco quepa ahi se
+	# pierde de verdad: en ese punto el barco esta anegado del todo.
+	var otras: int = probes.size() - 1
+	while sobra > 0.0 and otras > 0:
+		var porcion: float = sobra / float(otras)
+		var quedaba: float = sobra
+		sobra = 0.0
+		otras = 0
+		for i in probes.size():
+			if i == index or probes[i].flooding >= 1.0:
+				continue
+			sobra += _verter_en(i, porcion)
+			if probes[i].flooding < 1.0:
+				otras += 1
+		if is_equal_approx(sobra, quedaba):
+			return # no cabe en ninguna: el barco esta lleno
+
+
+## Vierte en una celda y devuelve lo que no cupo.
+func _verter_en(index: int, amount: float) -> float:
+	var hueco: float = maxf(1.0 - probes[index].flooding, 0.0)
+	var cabe: float = minf(amount, hueco)
+	probes[index].flooding += cabe
+	return amount - cabe
 
 
 ## Achicar: es lo que hace el jugador con el cubo.
